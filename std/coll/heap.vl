@@ -1,0 +1,287 @@
+// Pure Velo binary heap and priority queue (zero C runtime dependencies).
+// Backed by dynamic array storage, power-of-two growth, custom or default comparators,
+// O(log N) push and pop, O(1) peek, and O(N) bottom-up heapify.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "sort.vl"
+use "shelf.vl"
+
+// Raw binary heap descriptor.
+view data RawBinaryHeap {
+    data: @u8
+    elem_size: usize
+    len: usize
+    cap: usize
+    is_min: bool
+    cmp: act(@u8, @u8) -> i32
+}
+
+view act bheap_swap(data: @u8, elem_size: usize, i: usize, j: usize) {
+    if i == j { return }
+    let pi = (data as usize + i * elem_size) as @u8
+    let pj = (data as usize + j * elem_size) as @u8
+    mut b: usize = 0
+    loop b < elem_size {
+        let tmp = pi[b]
+        pi[b] = pj[b]
+        pj[b] = tmp
+        b += 1
+    }
+}
+
+// Creates a new RawBinaryHeap. If cmp is null, defaults to cmp_i64.
+view act bheap_create(elem_size: usize, initial_cap: usize, is_min: bool, cmp: act(@u8, @u8) -> i32) -> RawBinaryHeap {
+    mut sz = elem_size
+    if sz == 0 { sz = 8 }
+    mut cap = initial_cap
+    if cap < 8 { cap = 8 }
+    mut comparator = cmp
+    if comparator == null { comparator = cmp_i64 }
+    let mem = heap_alloc(sz * cap)
+    return RawBinaryHeap {
+        data: mem,
+        elem_size: sz,
+        len: 0,
+        cap: cap,
+        is_min: is_min,
+        cmp: comparator,
+    }
+}
+
+// Frees the allocated backing buffer and resets heap fields.
+view act bheap_free(h: @RawBinaryHeap) {
+    if h == null { return }
+    if h.data != null {
+        heap_free(h.data)
+        h.data = null
+    }
+    h.len = 0
+    h.cap = 0
+}
+
+// Clears all elements from the heap without releasing allocated capacity.
+view act bheap_clear(h: @RawBinaryHeap) {
+    if h == null { return }
+    h.len = 0
+}
+
+view act bheap_len(h: @RawBinaryHeap) -> usize {
+    if h == null { return 0 }
+    return h.len
+}
+
+view act bheap_cap(h: @RawBinaryHeap) -> usize {
+    if h == null { return 0 }
+    return h.cap
+}
+
+view act bheap_is_empty(h: @RawBinaryHeap) -> bool {
+    return bheap_len(h) == 0
+}
+
+view act bheap_ensure_capacity(h: @RawBinaryHeap, needed: usize) -> bool {
+    let required = h.len + needed
+    if required <= h.cap and h.data != null { return true }
+    mut new_cap = h.cap * 2
+    if new_cap < required { new_cap = required }
+    if new_cap < 8 { new_cap = 8 }
+    let new_mem = heap_realloc(h.data, new_cap * h.elem_size)
+    if new_mem == null { return false }
+    h.data = new_mem
+    h.cap = new_cap
+    return true
+}
+
+view act bheap_should_swap(h: @RawBinaryHeap, parent_idx: usize, child_idx: usize) -> bool {
+    let p_ptr = (h.data as usize + parent_idx * h.elem_size) as @u8
+    let c_ptr = (h.data as usize + child_idx * h.elem_size) as @u8
+    let c = h.cmp(p_ptr, c_ptr)
+    if h.is_min {
+        return c > 0
+    }
+    return c < 0
+}
+
+view act bheap_sift_up(h: @RawBinaryHeap, idx: usize) {
+    mut child = idx
+    loop child > 0 {
+        let parent = (child - 1) / 2
+        if bheap_should_swap(h, parent, child) {
+            bheap_swap(h.data, h.elem_size, parent, child)
+            child = parent
+        } else {
+            break
+        }
+    }
+}
+
+view act bheap_sift_down(h: @RawBinaryHeap, idx: usize) {
+    mut parent = idx
+    loop {
+        let left = 2 * parent + 1
+        if left >= h.len { break }
+        mut target = left
+        let right = left + 1
+        if right < h.len {
+            let pl = (h.data as usize + left * h.elem_size) as @u8
+            let pr = (h.data as usize + right * h.elem_size) as @u8
+            let c = h.cmp(pl, pr)
+            if h.is_min {
+                if c > 0 { target = right }
+            } else {
+                if c < 0 { target = right }
+            }
+        }
+        if bheap_should_swap(h, parent, target) {
+            bheap_swap(h.data, h.elem_size, parent, target)
+            parent = target
+        } else {
+            break
+        }
+    }
+}
+
+// Pushes an element into the binary heap in O(log N).
+view act bheap_push(h: @RawBinaryHeap, elem_ptr: @u8) -> bool {
+    if h == null or elem_ptr == null { return false }
+    if !bheap_ensure_capacity(h, 1) { return false }
+    let dest = (h.data as usize + h.len * h.elem_size) as @u8
+    copy(dest, elem_ptr, h.elem_size)
+    h.len += 1
+    bheap_sift_up(h, h.len - 1)
+    return true
+}
+
+// Removes and returns the root element (min or max) in O(log N).
+view act bheap_pop(h: @RawBinaryHeap, out_elem: @u8) -> bool {
+    if h == null or h.len == 0 or h.data == null { return false }
+    if out_elem != null {
+        copy(out_elem, h.data, h.elem_size)
+    }
+    h.len -= 1
+    if h.len > 0 {
+        let last = (h.data as usize + h.len * h.elem_size) as @u8
+        copy(h.data, last, h.elem_size)
+        bheap_sift_down(h, 0)
+    }
+    return true
+}
+
+// Returns a direct pointer to the root element without removing it.
+view act bheap_peek(h: @RawBinaryHeap) -> @u8 {
+    if h == null or h.len == 0 or h.data == null { return null }
+    return h.data
+}
+
+// Pushes in_elem then pops and returns root in O(log N).
+view act bheap_push_pop(h: @RawBinaryHeap, in_elem: @u8, out_elem: @u8) -> bool {
+    if h == null or in_elem == null { return false }
+    if h.len == 0 {
+        if out_elem != null { copy(out_elem, in_elem, h.elem_size) }
+        return true
+    }
+    let c = h.cmp(in_elem, h.data)
+    let in_better = if h.is_min { c < 0 } else { c > 0 }
+    if in_better {
+        if out_elem != null { copy(out_elem, in_elem, h.elem_size) }
+        return true
+    }
+    if out_elem != null { copy(out_elem, h.data, h.elem_size) }
+    copy(h.data, in_elem, h.elem_size)
+    bheap_sift_down(h, 0)
+    return true
+}
+
+// Pops root and pushes in_elem in O(log N). Fails if heap is empty.
+view act bheap_replace(h: @RawBinaryHeap, in_elem: @u8, out_elem: @u8) -> bool {
+    if h == null or h.len == 0 or in_elem == null { return false }
+    if out_elem != null { copy(out_elem, h.data, h.elem_size) }
+    copy(h.data, in_elem, h.elem_size)
+    bheap_sift_down(h, 0)
+    return true
+}
+
+// Re-establishes the heap property for the entire buffer in O(N).
+view act bheap_heapify(h: @RawBinaryHeap) {
+    if h == null or h.len <= 1 { return }
+    mut i = h.len / 2
+    loop i > 0 {
+        i -= 1
+        bheap_sift_down(h, i)
+    }
+}
+
+// Converts the heap contents to a newly allocated RawShelf.
+view act bheap_to_shelf(h: @RawBinaryHeap) -> RawShelf {
+    if h == null { return shelf_create(8, 0) }
+    mut s = shelf_create(h.elem_size, h.len)
+    if h.len > 0 and s.data != null {
+        copy(s.data, h.data, h.len * h.elem_size)
+        s.len = h.len
+    }
+    return s
+}
+
+// --- Typed convenience helpers ---
+
+view act bheap_create_min_i64(initial_cap: usize) -> RawBinaryHeap {
+    return bheap_create(8, initial_cap, true, cmp_i64)
+}
+
+view act bheap_create_max_i64(initial_cap: usize) -> RawBinaryHeap {
+    return bheap_create(8, initial_cap, false, cmp_i64)
+}
+
+view act bheap_push_i64(h: @RawBinaryHeap, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return bheap_push(h, pv as @u8)
+}
+
+view act bheap_pop_i64(h: @RawBinaryHeap, out_val: @i64) -> bool {
+    if out_val == null { return bheap_pop(h, null) }
+    let p_out: @i64 = out_val
+    return bheap_pop(h, p_out as @u8)
+}
+
+view act bheap_peek_i64(h: @RawBinaryHeap, out_val: @i64) -> bool {
+    let p = bheap_peek(h)
+    if p == null { return false }
+    if out_val != null {
+        let pv = p as @i64
+        out_val[0] = pv[0]
+    }
+    return true
+}
+
+view act bheap_create_min_f64(initial_cap: usize) -> RawBinaryHeap {
+    return bheap_create(8, initial_cap, true, cmp_f64)
+}
+
+view act bheap_create_max_f64(initial_cap: usize) -> RawBinaryHeap {
+    return bheap_create(8, initial_cap, false, cmp_f64)
+}
+
+view act bheap_push_f64(h: @RawBinaryHeap, val: f64) -> bool {
+    mut v = val
+    let pv: @f64 = @v
+    return bheap_push(h, pv as @u8)
+}
+
+view act bheap_pop_f64(h: @RawBinaryHeap, out_val: @f64) -> bool {
+    if out_val == null { return bheap_pop(h, null) }
+    let p_out: @f64 = out_val
+    return bheap_pop(h, p_out as @u8)
+}
+
+view act bheap_peek_f64(h: @RawBinaryHeap, out_val: @f64) -> bool {
+    let p = bheap_peek(h)
+    if p == null { return false }
+    if out_val != null {
+        let pv = p as @f64
+        out_val[0] = pv[0]
+    }
+    return true
+}

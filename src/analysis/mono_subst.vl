@@ -100,6 +100,8 @@ act mono_normalize_type(t: string) -> string {
     // 5.2 slice 10 / 7.2: `heap shelf[...]` and `heap Map[...]` pass through UNCHANGED
     if t[at0] == 'h' and len0 >= at0 + 11 and t[at0 + 1] == 'e' and t[at0 + 2] == 'a' and t[at0 + 3] == 'p' and t[at0 + 4] == ' ' and t[at0 + 5] == 's' and t[at0 + 6] == 'h' and t[at0 + 7] == 'e' and t[at0 + 8] == 'l' and t[at0 + 9] == 'f' and t[at0 + 10] == '[' { return t }
     if t[at0] == 'h' and len0 >= at0 + 9 and t[at0 + 1] == 'e' and t[at0 + 2] == 'a' and t[at0 + 3] == 'p' and t[at0 + 4] == ' ' and (t[at0 + 5] == 'M' or t[at0 + 5] == 'm') and t[at0 + 6] == 'a' and t[at0 + 7] == 'p' and t[at0 + 8] == '[' { return t }
+    // Fixed-size stack array [N]T passes through UNCHANGED
+    if at0 < len0 and t[at0] == '[' { return t }
     let len = str.len(t)
     mut at_count: usize = 0
     loop at_count < len and t[at_count] == '@' { at_count += 1 }

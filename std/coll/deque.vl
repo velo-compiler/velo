@@ -1,0 +1,196 @@
+// Pure Velo double-ended queue (deque) backed by a dynamically growing circular ring buffer (zero C runtime dependencies).
+// Provides O(1) push_front, push_back, pop_front, pop_back, random indexing, and rotation.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "ring.vl"
+use "shelf.vl"
+
+view data RawDeque {
+    ring_buf: RawRing
+}
+
+view act deque_create(elem_size: usize, initial_cap: usize) -> RawDeque {
+    return RawDeque {
+        ring_buf: ring_create(elem_size, initial_cap),
+    }
+}
+
+view act deque_free(d: @RawDeque) {
+    if d == null { return }
+    ring_free(@d.ring_buf)
+}
+
+view act deque_clear(d: @RawDeque) {
+    if d == null { return }
+    ring_clear(@d.ring_buf)
+}
+
+view act deque_len(d: @RawDeque) -> usize {
+    if d == null { return 0 }
+    return ring_len(@d.ring_buf)
+}
+
+view act deque_cap(d: @RawDeque) -> usize {
+    if d == null { return 0 }
+    return ring_cap(@d.ring_buf)
+}
+
+view act deque_is_empty(d: @RawDeque) -> bool {
+    return deque_len(d) == 0
+}
+
+view act deque_push_back(d: @RawDeque, elem_ptr: @u8) -> bool {
+    if d == null { return false }
+    return ring_put(@d.ring_buf, elem_ptr)
+}
+
+view act deque_push_front(d: @RawDeque, elem_ptr: @u8) -> bool {
+    if d == null { return false }
+    return ring_push_front(@d.ring_buf, elem_ptr)
+}
+
+view act deque_pop_back(d: @RawDeque, out_elem: @u8) -> bool {
+    if d == null { return false }
+    return ring_pop_back(@d.ring_buf, out_elem)
+}
+
+view act deque_pop_front(d: @RawDeque, out_elem: @u8) -> bool {
+    if d == null { return false }
+    return ring_pop_front(@d.ring_buf, out_elem)
+}
+
+view act deque_peek_back(d: @RawDeque) -> @u8 {
+    if d == null { return null }
+    return ring_peek_back(@d.ring_buf)
+}
+
+view act deque_peek_front(d: @RawDeque) -> @u8 {
+    if d == null { return null }
+    return ring_peek(@d.ring_buf)
+}
+
+view act deque_get(d: @RawDeque, index: usize) -> @u8 {
+    if d == null { return null }
+    return ring_get(@d.ring_buf, index)
+}
+
+view act deque_set(d: @RawDeque, index: usize, elem_ptr: @u8) -> bool {
+    if d == null { return false }
+    return ring_set(@d.ring_buf, index, elem_ptr)
+}
+
+// Rotates the deque n steps.
+// If n > 0, rotates right (back element wraps to front, matching Python collections.deque.rotate).
+// If n < 0, rotates left (front element wraps to back).
+view act deque_rotate(d: @RawDeque, n: isize) -> bool {
+    if d == null or d.ring_buf.len <= 1 { return true }
+    let len = d.ring_buf.len as isize
+    mut k = n % len
+    if k == 0 as isize { return true }
+    if k < 0 as isize {
+        k += len
+    }
+
+    // Allocate stack buffer for one element
+    let sz = d.ring_buf.elem_size
+    let tmp = heap_alloc(sz)
+    if tmp == null { return false }
+
+    mut steps = k as usize
+    // Optimize: if steps > len / 2, rotate left by (len - steps) instead
+    if steps > (d.ring_buf.len / 2) {
+        mut left_steps = d.ring_buf.len - steps
+        loop left_steps > 0 {
+            ring_pop_front(@d.ring_buf, tmp)
+            ring_put(@d.ring_buf, tmp)
+            left_steps -= 1
+        }
+    } else {
+        loop steps > 0 {
+            ring_pop_back(@d.ring_buf, tmp)
+            ring_push_front(@d.ring_buf, tmp)
+            steps -= 1
+        }
+    }
+
+    heap_free(tmp)
+    return true
+}
+
+view act deque_to_shelf(d: @RawDeque) -> RawShelf {
+    if d == null { return shelf_create(8, 0) }
+    mut s = shelf_create(d.ring_buf.elem_size, d.ring_buf.len)
+    if d.ring_buf.len > 0 and s.data != null {
+        ring_copy_to(@d.ring_buf, s.data)
+        s.len = d.ring_buf.len
+    }
+    return s
+}
+
+// --- Typed convenience helpers ---
+
+view act deque_create_i64(initial_cap: usize) -> RawDeque {
+    return deque_create(8, initial_cap)
+}
+
+view act deque_push_back_i64(d: @RawDeque, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return deque_push_back(d, pv as @u8)
+}
+
+view act deque_push_front_i64(d: @RawDeque, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return deque_push_front(d, pv as @u8)
+}
+
+view act deque_pop_back_i64(d: @RawDeque, out_val: @i64) -> bool {
+    if out_val == null { return deque_pop_back(d, null) }
+    let p_out: @i64 = out_val
+    return deque_pop_back(d, p_out as @u8)
+}
+
+view act deque_pop_front_i64(d: @RawDeque, out_val: @i64) -> bool {
+    if out_val == null { return deque_pop_front(d, null) }
+    let p_out: @i64 = out_val
+    return deque_pop_front(d, p_out as @u8)
+}
+
+view act deque_peek_back_i64(d: @RawDeque, out_val: @i64) -> bool {
+    let p = deque_peek_back(d)
+    if p == null { return false }
+    if out_val != null {
+        let pv = p as @i64
+        out_val[0] = pv[0]
+    }
+    return true
+}
+
+view act deque_peek_front_i64(d: @RawDeque, out_val: @i64) -> bool {
+    let p = deque_peek_front(d)
+    if p == null { return false }
+    if out_val != null {
+        let pv = p as @i64
+        out_val[0] = pv[0]
+    }
+    return true
+}
+
+view act deque_get_i64(d: @RawDeque, index: usize, out_val: @i64) -> bool {
+    let p = deque_get(d, index)
+    if p == null { return false }
+    if out_val != null {
+        let pv = p as @i64
+        out_val[0] = pv[0]
+    }
+    return true
+}
+
+view act deque_set_i64(d: @RawDeque, index: usize, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return deque_set(d, index, pv as @u8)
+}

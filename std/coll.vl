@@ -6,4 +6,6 @@ use "coll/ring.vl"
 use "coll/hash.vl"
 use "coll/map.vl"
 use "coll/map_ops.vl"
-
+use "coll/set.vl"
+use "coll/deque.vl"
+use "coll/heap.vl"

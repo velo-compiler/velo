@@ -60,6 +60,9 @@ typedef struct JsonValue JsonValue;
 typedef struct JsonParseError JsonParseError;
 typedef struct JsonParser JsonParser;
 typedef struct JsonDoc JsonDoc;
+typedef int32_t Role;
+typedef int32_t Status;
+typedef struct Shape Shape;
 typedef struct SemVer SemVer;
 typedef struct SemVerReq SemVerReq;
 typedef struct DepLocation DepLocation;
@@ -81,6 +84,41 @@ typedef struct FmtTokenList FmtTokenList;
 
 /* Function pointer typedefs */
 typedef void (*velo_act_to_void)(void);
+
+enum {
+    Role_Admin = 0,
+    Role_Member = 1,
+    Role_Guest = 2,
+};
+
+enum {
+    Status_Active = 0,
+    Status_Pending = 1,
+    Status_Suspended = 2,
+};
+
+enum {
+    Shape_Circle = 0,
+    Shape_Rect = 1,
+    Shape_Point = 2,
+};
+
+typedef struct Shape_Circle_Payload {
+    double radius;
+} Shape_Circle_Payload;
+
+typedef struct Shape_Rect_Payload {
+    double w;
+    double h;
+} Shape_Rect_Payload;
+
+struct Shape {
+    int32_t kind;
+    union {
+        Shape_Circle_Payload Circle;
+        Shape_Rect_Payload Rect;
+    } as;
+};
 
 struct FileHandle {
     size_t os_handle;
@@ -2642,6 +2680,7 @@ StrSlice json_stringify(Arena* a, JsonValue* v);
 StrSlice json_stringify_pretty(Arena* a, JsonValue* v, int32_t indent_spaces);
 const char* json_stringify_str(Arena* a, JsonValue* v);
 const char* json_stringify_pretty_str(Arena* a, JsonValue* v, int32_t indent_spaces);
+const char* json_codec_slice_to_str(StrSlice s);
 bool parse_semver_component(const char* s, size_t start_idx, size_t end_idx, int64_t* out_val);
 SemVer semver_parse(const char* s);
 const char* semver_to_str(SemVer* v);
@@ -19795,200 +19834,205 @@ const char* mono_normalize_type(const char* t) {
 #line 102 "src/main.vl"
         return t;
     }
-#line 103 "src/main.vl"
-    size_t len = ((usize)strlen(t));
 #line 104 "src/main.vl"
+    if (((at0 < len0) && velo_cmp_eq_u_s(t[at0], '['))) {
+#line 104 "src/main.vl"
+        return t;
+    }
+#line 105 "src/main.vl"
+    size_t len = ((usize)strlen(t));
+#line 106 "src/main.vl"
     size_t at_count = 0;
-#line 105 "src/main.vl"
+#line 107 "src/main.vl"
     for (int32_t it = 0; (((at_count < len) && velo_cmp_eq_u_s(t[at_count], '@'))); it++) {
-#line 105 "src/main.vl"
+#line 107 "src/main.vl"
         at_count += 1;
         __loop_cont_209: __attribute__((unused));
     }
     __loop_break_209: __attribute__((unused));
-#line 106 "src/main.vl"
-    bool has_bracket = false;
-#line 107 "src/main.vl"
-    size_t k = at_count;
 #line 108 "src/main.vl"
+    bool has_bracket = false;
+#line 109 "src/main.vl"
+    size_t k = at_count;
+#line 110 "src/main.vl"
     for (int32_t it = 0; ((k < len)); it++) {
-#line 109 "src/main.vl"
+#line 111 "src/main.vl"
         if (velo_cmp_eq_u_s(t[k], '[')) {
-#line 109 "src/main.vl"
+#line 111 "src/main.vl"
             has_bracket = true;
-#line 109 "src/main.vl"
+#line 111 "src/main.vl"
             goto __loop_break_210;
         }
-#line 110 "src/main.vl"
+#line 112 "src/main.vl"
         k += 1;
         __loop_cont_210: __attribute__((unused));
     }
     __loop_break_210: __attribute__((unused));
-#line 112 "src/main.vl"
+#line 114 "src/main.vl"
     if ((!has_bracket)) {
-#line 112 "src/main.vl"
+#line 114 "src/main.vl"
         return t;
     }
-#line 113 "src/main.vl"
+#line 115 "src/main.vl"
     const char* base = copy_slice_to_string(t, at_count, (len - at_count));
-#line 114 "src/main.vl"
+#line 116 "src/main.vl"
     const char* mangled = mono_mangle_type(base);
-#line 115 "src/main.vl"
+#line 117 "src/main.vl"
     if (velo_cmp_eq_u_s(at_count, 0)) {
-#line 115 "src/main.vl"
+#line 117 "src/main.vl"
         return mangled;
     }
-#line 116 "src/main.vl"
+#line 118 "src/main.vl"
     StringBuilder sb = create_sb((at_count + ((usize)strlen(mangled))));
-#line 117 "src/main.vl"
+#line 119 "src/main.vl"
     size_t j = 0;
-#line 118 "src/main.vl"
+#line 120 "src/main.vl"
     for (int32_t it = 0; ((j < at_count)); it++) {
-#line 118 "src/main.vl"
+#line 120 "src/main.vl"
         sb_append_char((&(sb)), '@');
-#line 118 "src/main.vl"
+#line 120 "src/main.vl"
         j += 1;
         __loop_cont_211: __attribute__((unused));
     }
     __loop_break_211: __attribute__((unused));
-#line 119 "src/main.vl"
+#line 121 "src/main.vl"
     sb_append_str((&(sb)), mangled);
-#line 120 "src/main.vl"
+#line 122 "src/main.vl"
     return sb_to_string((&(sb)));
 }
 
-#line 123 "src/main.vl"
+#line 125 "src/main.vl"
 const char* mono_subst_single(const char* t, const char* p, const char* a) {
-#line 124 "src/main.vl"
+#line 126 "src/main.vl"
     if ((t == NULL)) {
-#line 124 "src/main.vl"
+#line 126 "src/main.vl"
         return NULL;
     }
-#line 125 "src/main.vl"
+#line 127 "src/main.vl"
     if (((t != NULL && p != NULL) ? (strcmp(t, p) == 0) : (t == p))) {
-#line 125 "src/main.vl"
+#line 127 "src/main.vl"
         return a;
     }
-#line 126 "src/main.vl"
+#line 128 "src/main.vl"
     const char* at_p = mono_concat("@", p);
-#line 127 "src/main.vl"
+#line 129 "src/main.vl"
     if (((t != NULL && at_p != NULL) ? (strcmp(t, at_p) == 0) : (t == at_p))) {
-#line 127 "src/main.vl"
+#line 129 "src/main.vl"
         return mono_concat("@", a);
     }
-#line 128 "src/main.vl"
+#line 130 "src/main.vl"
     const char* at_at_p = mono_concat("@@", p);
-#line 129 "src/main.vl"
+#line 131 "src/main.vl"
     if (((t != NULL && at_at_p != NULL) ? (strcmp(t, at_at_p) == 0) : (t == at_at_p))) {
-#line 129 "src/main.vl"
+#line 131 "src/main.vl"
         return mono_concat("@@", a);
     }
-#line 131 "src/main.vl"
-    const char* b1 = mono_concat("[", mono_concat(p, "]"));
-#line 132 "src/main.vl"
-    const char* r1 = mono_concat("[", mono_concat(a, "]"));
 #line 133 "src/main.vl"
-    const char* b2 = mono_concat("[", mono_concat(p, ", "));
+    const char* b1 = mono_concat("[", mono_concat(p, "]"));
 #line 134 "src/main.vl"
-    const char* r2 = mono_concat("[", mono_concat(a, ", "));
+    const char* r1 = mono_concat("[", mono_concat(a, "]"));
 #line 135 "src/main.vl"
-    const char* b3 = mono_concat(", ", mono_concat(p, "]"));
+    const char* b2 = mono_concat("[", mono_concat(p, ", "));
 #line 136 "src/main.vl"
-    const char* r3 = mono_concat(", ", mono_concat(a, "]"));
+    const char* r2 = mono_concat("[", mono_concat(a, ", "));
 #line 137 "src/main.vl"
-    const char* b4 = mono_concat(", ", mono_concat(p, ", "));
+    const char* b3 = mono_concat(", ", mono_concat(p, "]"));
 #line 138 "src/main.vl"
-    const char* r4 = mono_concat(", ", mono_concat(a, ", "));
+    const char* r3 = mono_concat(", ", mono_concat(a, "]"));
+#line 139 "src/main.vl"
+    const char* b4 = mono_concat(", ", mono_concat(p, ", "));
 #line 140 "src/main.vl"
-    const char* res = mono_str_replace(t, b1, r1);
-#line 141 "src/main.vl"
-    res = mono_str_replace(res, b2, r2);
+    const char* r4 = mono_concat(", ", mono_concat(a, ", "));
 #line 142 "src/main.vl"
-    res = mono_str_replace(res, b3, r3);
+    const char* res = mono_str_replace(t, b1, r1);
 #line 143 "src/main.vl"
-    res = mono_str_replace(res, b4, r4);
+    res = mono_str_replace(res, b2, r2);
 #line 144 "src/main.vl"
+    res = mono_str_replace(res, b3, r3);
+#line 145 "src/main.vl"
+    res = mono_str_replace(res, b4, r4);
+#line 146 "src/main.vl"
     return res;
 }
 
-#line 148 "src/main.vl"
+#line 150 "src/main.vl"
 const char* mono_strip_bounds(const char* params) {
-#line 149 "src/main.vl"
+#line 151 "src/main.vl"
     if ((params == NULL)) {
-#line 149 "src/main.vl"
+#line 151 "src/main.vl"
         return NULL;
     }
-#line 150 "src/main.vl"
-    size_t len = ((usize)strlen(params));
-#line 151 "src/main.vl"
-    StringBuilder sb = create_sb(len);
 #line 152 "src/main.vl"
-    size_t i = 0;
+    size_t len = ((usize)strlen(params));
 #line 153 "src/main.vl"
-    bool in_bound = false;
+    StringBuilder sb = create_sb(len);
 #line 154 "src/main.vl"
-    for (int32_t it = 0; ((i < len)); it++) {
+    size_t i = 0;
 #line 155 "src/main.vl"
-        uint8_t c = params[i];
+    bool in_bound = false;
 #line 156 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, ':')) {
+    for (int32_t it = 0; ((i < len)); it++) {
 #line 157 "src/main.vl"
+        uint8_t c = params[i];
+#line 158 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, ':')) {
+#line 159 "src/main.vl"
             in_bound = true;
         } else
-#line 158 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, ',')) {
-#line 159 "src/main.vl"
-            in_bound = false;
 #line 160 "src/main.vl"
-            sb_append_char((&(sb)), c);
-        } else
+        if (velo_cmp_eq_u_s(c, ',')) {
 #line 161 "src/main.vl"
-        if ((!in_bound)) {
+            in_bound = false;
 #line 162 "src/main.vl"
             sb_append_char((&(sb)), c);
-        }
+        } else
+#line 163 "src/main.vl"
+        if ((!in_bound)) {
 #line 164 "src/main.vl"
+            sb_append_char((&(sb)), c);
+        }
+#line 166 "src/main.vl"
         i += 1;
         __loop_cont_212: __attribute__((unused));
     }
     __loop_break_212: __attribute__((unused));
-#line 166 "src/main.vl"
+#line 168 "src/main.vl"
     return sb_to_string((&(sb)));
 }
 
-#line 169 "src/main.vl"
+#line 171 "src/main.vl"
 const char* mono_subst(const char* t, const char* params, const char* args) {
-#line 170 "src/main.vl"
+#line 172 "src/main.vl"
     if ((((t == NULL) || (params == NULL)) || (args == NULL))) {
-#line 170 "src/main.vl"
+#line 172 "src/main.vl"
         return t;
     }
-#line 171 "src/main.vl"
-    const char* clean_params = mono_strip_bounds(params);
-#line 172 "src/main.vl"
-    int32_t comma_p = mono_find_char(clean_params, ',');
 #line 173 "src/main.vl"
-    int32_t comma_a = mono_find_char(args, ',');
+    const char* clean_params = mono_strip_bounds(params);
 #line 174 "src/main.vl"
-    if (((comma_p < 0) || (comma_a < 0))) {
+    int32_t comma_p = mono_find_char(clean_params, ',');
 #line 175 "src/main.vl"
-        const char* p = mono_trim(clean_params);
+    int32_t comma_a = mono_find_char(args, ',');
 #line 176 "src/main.vl"
-        const char* a = mono_trim(args);
+    if (((comma_p < 0) || (comma_a < 0))) {
 #line 177 "src/main.vl"
+        const char* p = mono_trim(clean_params);
+#line 178 "src/main.vl"
+        const char* a = mono_trim(args);
+#line 179 "src/main.vl"
         return mono_subst_single(t, p, a);
     }
-#line 179 "src/main.vl"
-    const char* p1 = mono_trim(copy_slice_to_string(clean_params, 0, ((size_t)(comma_p))));
-#line 180 "src/main.vl"
-    const char* p2 = mono_trim(copy_slice_to_string(clean_params, ((size_t)((comma_p + 1))), ((size_t)(((((usize)strlen(clean_params)) - comma_p) - 1)))));
 #line 181 "src/main.vl"
-    const char* a1 = mono_trim(copy_slice_to_string(args, 0, ((size_t)(comma_a))));
+    const char* p1 = mono_trim(copy_slice_to_string(clean_params, 0, ((size_t)(comma_p))));
 #line 182 "src/main.vl"
-    const char* a2 = mono_trim(copy_slice_to_string(args, ((size_t)((comma_a + 1))), ((size_t)(((((usize)strlen(args)) - comma_a) - 1)))));
+    const char* p2 = mono_trim(copy_slice_to_string(clean_params, ((size_t)((comma_p + 1))), ((size_t)(((((usize)strlen(clean_params)) - comma_p) - 1)))));
 #line 183 "src/main.vl"
-    const char* step1 = mono_subst_single(t, p1, a1);
+    const char* a1 = mono_trim(copy_slice_to_string(args, 0, ((size_t)(comma_a))));
 #line 184 "src/main.vl"
+    const char* a2 = mono_trim(copy_slice_to_string(args, ((size_t)((comma_a + 1))), ((size_t)(((((usize)strlen(args)) - comma_a) - 1)))));
+#line 185 "src/main.vl"
+    const char* step1 = mono_subst_single(t, p1, a1);
+#line 186 "src/main.vl"
     return mono_subst_single(step1, p2, a2);
 }
 
@@ -57926,6 +57970,28 @@ const char* json_stringify_pretty_str(Arena* a, JsonValue* v, int32_t indent_spa
     json_write((&(sb)), v, ind);
 #line 220 "src/main.vl"
     return ((const char*)(sb_to_cstr((&(sb)))));
+}
+
+#line 21 "src/main.vl"
+const char* json_codec_slice_to_str(StrSlice s) {
+#line 22 "src/main.vl"
+    if (((s.ptr == NULL) || velo_cmp_eq_u_s(s.len, 0))) {
+#line 22 "src/main.vl"
+        return "";
+    }
+#line 23 "src/main.vl"
+    uint8_t* buf = heap_alloc((s.len + 1));
+#line 24 "src/main.vl"
+    if ((buf == NULL)) {
+#line 24 "src/main.vl"
+        return "";
+    }
+#line 25 "src/main.vl"
+    copy(buf, s.ptr, s.len);
+#line 26 "src/main.vl"
+    buf[s.len] = ((uint8_t)(0));
+#line 27 "src/main.vl"
+    return ((const char*)(buf));
 }
 
 #line 23 "src/main.vl"

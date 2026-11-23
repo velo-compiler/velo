@@ -2153,6 +2153,81 @@ act process_large_csv(path: string) -> bool {
 }
 ```
 
+## 18. Standard Collections Subsystem (`std.coll`)
+
+Velo provides standard collection primitives with zero C runtime dependencies (`std/coll/`): dynamic shelf array (`shelf.vl`), FIFO circular ring buffer (`ring.vl`), open-addressing hash table (`map.vl`), introsort (`sort.vl`), and advanced data structures:
+
+### 18.1 Hash Set (`std/coll/set.vl`)
+
+`RawSet` wraps `RawMap` to provide an open-addressing, linear-probing hash set with tombstone deletion and mathematical set algebra.
+
+- **Types:** `RawSet { map: RawMap }`
+- **Creation & Lifetime:**
+  - `set_create(elem_size: usize, is_string: bool, initial_cap: usize) -> RawSet`: Initializes a set with power-of-two bucket capacity.
+  - `set_free(s: @RawSet)`: Releases backing table allocations.
+  - `set_clear(s: @RawSet)`: Clears elements in $O(N)$ while retaining table capacity.
+- **Inspection:**
+  - `set_len(s: @RawSet) -> usize`: Number of distinct elements stored.
+  - `set_cap(s: @RawSet) -> usize`: Allocated bucket capacity.
+  - `set_is_empty(s: @RawSet) -> bool`: Returns `set_len(s) == 0`.
+- **Operations:**
+  - `set_add(s: @RawSet, elem_ptr: @u8) -> bool`: Inserts element (no-op if already present). Returns `true`.
+  - `set_contains(s: @RawSet, elem_ptr: @u8) -> bool`: Key existence check in $O(1)$ expected time.
+  - `set_remove(s: @RawSet, elem_ptr: @u8) -> bool`: Removes element using tombstone recycling. Returns `true` if found.
+- **Typed Helpers:**
+  - Strings: `set_create_str(initial_cap: usize)`, `set_add_str(s: @RawSet, str_val: string)`, `set_contains_str(s: @RawSet, str_val: string)`, `set_remove_str(s: @RawSet, str_val: string)`.
+  - Integers (`i64`): `set_create_i64(initial_cap: usize)`, `set_add_i64(s: @RawSet, val: i64)`, `set_contains_i64(s: @RawSet, val: i64)`, `set_remove_i64(s: @RawSet, val: i64)`.
+- **Set Algebra & Conversions:**
+  - `set_to_shelf(s: @RawSet) -> RawShelf`: Extracts keys into a dynamic `RawShelf`.
+  - `set_union(a: @RawSet, b: @RawSet) -> RawSet`: Computes $A \cup B$.
+  - `set_intersection(a: @RawSet, b: @RawSet) -> RawSet`: Computes $A \cap B$.
+  - `set_difference(a: @RawSet, b: @RawSet) -> RawSet`: Computes $A \setminus B$.
+  - `set_is_subset(a: @RawSet, b: @RawSet) -> bool`: Returns `true` if $A \subseteq B$.
+  - `set_is_disjoint(a: @RawSet, b: @RawSet) -> bool`: Returns `true` if $A \cap B = \emptyset$.
+  - `set_equals(a: @RawSet, b: @RawSet) -> bool`: Returns `true` if $A = B$.
+
+### 18.2 Double-Ended Queue (`std/coll/deque.vl`)
+
+`RawDeque` wraps `RawRing` to provide an amortized $O(1)$ double-ended queue backed by a dynamically growing circular buffer.
+
+- **Types:** `RawDeque { ring_buf: RawRing }`
+- **Creation & Lifetime:** `deque_create(elem_size: usize, initial_cap: usize) -> RawDeque`, `deque_free(d: @RawDeque)`, `deque_clear(d: @RawDeque)`.
+- **Inspection:** `deque_len(d: @RawDeque) -> usize`, `deque_cap(d: @RawDeque) -> usize`, `deque_is_empty(d: @RawDeque) -> bool`.
+- **Queue Operations:**
+  - `deque_push_back(d: @RawDeque, elem_ptr: @u8) -> bool` / `deque_push_back_i64(d: @RawDeque, val: i64) -> bool`
+  - `deque_push_front(d: @RawDeque, elem_ptr: @u8) -> bool` / `deque_push_front_i64(d: @RawDeque, val: i64) -> bool`
+  - `deque_pop_back(d: @RawDeque, out_elem: @u8) -> bool` / `deque_pop_back_i64(d: @RawDeque, out_val: @i64) -> bool`
+  - `deque_pop_front(d: @RawDeque, out_elem: @u8) -> bool` / `deque_pop_front_i64(d: @RawDeque, out_val: @i64) -> bool`
+  - `deque_peek_back(d: @RawDeque) -> @u8` / `deque_peek_back_i64(d: @RawDeque, out_val: @i64) -> bool`
+  - `deque_peek_front(d: @RawDeque) -> @u8` / `deque_peek_front_i64(d: @RawDeque, out_val: @i64) -> bool`
+- **Random Access & Rotation:**
+  - `deque_get(d: @RawDeque, index: usize) -> @u8` / `deque_get_i64(d: @RawDeque, index: usize, out_val: @i64) -> bool`
+  - `deque_set(d: @RawDeque, index: usize, elem_ptr: @u8) -> bool` / `deque_set_i64(d: @RawDeque, index: usize, val: i64) -> bool`
+  - `deque_rotate(d: @RawDeque, n: isize) -> bool`: Rotates deque $n$ steps ($n > 0$ rotates right wrapping tail to head matching Python `collections.deque.rotate`, $n < 0$ rotates left).
+  - `deque_to_shelf(d: @RawDeque) -> RawShelf`: Copies deque elements in logical head-to-tail order to a newly allocated `RawShelf`.
+
+### 18.3 Binary Heap & Priority Queue (`std/coll/heap.vl`)
+
+`RawBinaryHeap` provides a binary min/max heap backed by dynamic array storage, custom comparators, $O(\log N)$ push and pop, $O(1)$ peek, and $O(N)$ bottom-up heapify.
+
+- **Types:** `RawBinaryHeap { data: @u8, elem_size: usize, len: usize, cap: usize, is_min: bool, cmp: act(@u8, @u8) -> i32 }`
+- **Creation & Lifetime:**
+  - `bheap_create(elem_size: usize, initial_cap: usize, is_min: bool, cmp: act(@u8, @u8) -> i32) -> RawBinaryHeap`: Initializes heap with custom comparator.
+  - `bheap_create_min_i64(initial_cap: usize) -> RawBinaryHeap`: Min-heap for `i64`.
+  - `bheap_create_max_i64(initial_cap: usize) -> RawBinaryHeap`: Max-heap for `i64`.
+  - `bheap_create_min_f64(initial_cap: usize) -> RawBinaryHeap`: Min-heap for `f64`.
+  - `bheap_create_max_f64(initial_cap: usize) -> RawBinaryHeap`: Max-heap for `f64`.
+  - `bheap_free(h: @RawBinaryHeap)`, `bheap_clear(h: @RawBinaryHeap)`.
+- **Operations:**
+  - `bheap_push(h: @RawBinaryHeap, elem_ptr: @u8) -> bool` / `bheap_push_i64(h: @RawBinaryHeap, val: i64) -> bool`: Sifts up in $O(\log N)$.
+  - `bheap_pop(h: @RawBinaryHeap, out_elem: @u8) -> bool` / `bheap_pop_i64(h: @RawBinaryHeap, out_val: @i64) -> bool`: Removes and returns root, sifting down in $O(\log N)$.
+  - `bheap_peek(h: @RawBinaryHeap) -> @u8` / `bheap_peek_i64(h: @RawBinaryHeap, out_val: @i64) -> bool`: Returns root element without removal in $O(1)$.
+  - `bheap_push_pop(h: @RawBinaryHeap, in_elem: @u8, out_elem: @u8) -> bool`: Pushes `in_elem` then pops root in a single sift pass ($O(\log N)$).
+  - `bheap_replace(h: @RawBinaryHeap, in_elem: @u8, out_elem: @u8) -> bool`: Pops root then pushes `in_elem` in $O(\log N)$.
+  - `bheap_heapify(h: @RawBinaryHeap)`: Re-establishes the heap invariant bottom-up in $O(N)$.
+  - `bheap_to_shelf(h: @RawBinaryHeap) -> RawShelf`: Converts raw heap buffer to a `RawShelf`.
+
+
 
 
 

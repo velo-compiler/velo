@@ -1,0 +1,139 @@
+// Unit test suite for std.coll.deque (pure Velo double-ended queue).
+use sys.io
+use "../../mem/heap.vl"
+use "../../mem/ops.vl"
+use "../../str/slice.vl"
+use "../../coll/ring.vl"
+use "../../coll/shelf.vl"
+use "../../coll/deque.vl"
+
+act test_deque_basic() -> bool {
+    mut d = deque_create_i64(4)
+    if deque_len(@d) != 0 or !deque_is_empty(@d) {
+        deque_free(@d); return false
+    }
+
+    // push_back
+    deque_push_back_i64(@d, 10)
+    deque_push_back_i64(@d, 20)
+    deque_push_back_i64(@d, 30)
+
+    if deque_len(@d) != 3 { deque_free(@d); return false }
+
+    mut front: i64 = 0
+    mut back: i64 = 0
+    if !deque_peek_front_i64(@d, @front) or front != 10 { deque_free(@d); return false }
+    if !deque_peek_back_i64(@d, @back) or back != 30 { deque_free(@d); return false }
+
+    // push_front
+    deque_push_front_i64(@d, 5)
+    if deque_len(@d) != 4 { deque_free(@d); return false }
+    if !deque_peek_front_i64(@d, @front) or front != 5 { deque_free(@d); return false }
+
+    // pop_front
+    mut v: i64 = 0
+    if !deque_pop_front_i64(@d, @v) or v != 5 { deque_free(@d); return false }
+    if !deque_pop_front_i64(@d, @v) or v != 10 { deque_free(@d); return false }
+
+    // pop_back
+    if !deque_pop_back_i64(@d, @v) or v != 30 { deque_free(@d); return false }
+    if !deque_pop_back_i64(@d, @v) or v != 20 { deque_free(@d); return false }
+
+    // Empty
+    if deque_len(@d) != 0 or !deque_is_empty(@d) { deque_free(@d); return false }
+    if deque_pop_front_i64(@d, @v) or deque_pop_back_i64(@d, @v) { deque_free(@d); return false }
+
+    deque_free(@d)
+    return true
+}
+
+act test_deque_indexing_and_rotation() -> bool {
+    mut d = deque_create_i64(8)
+    // Contents: [1, 2, 3, 4, 5]
+    mut i: i64 = 1
+    loop i <= 5 {
+        deque_push_back_i64(@d, i)
+        i += 1
+    }
+
+    if deque_len(@d) != 5 { deque_free(@d); return false }
+
+    // Check indexing
+    mut val: i64 = 0
+    if !deque_get_i64(@d, 0, @val) or val != 1 { deque_free(@d); return false }
+    if !deque_get_i64(@d, 2, @val) or val != 3 { deque_free(@d); return false }
+    if !deque_get_i64(@d, 4, @val) or val != 5 { deque_free(@d); return false }
+    if deque_get_i64(@d, 5, @val) { deque_free(@d); return false }
+
+    // Overwrite element at index 2
+    if !deque_set_i64(@d, 2, 99) { deque_free(@d); return false }
+    if !deque_get_i64(@d, 2, @val) or val != 99 { deque_free(@d); return false }
+    deque_set_i64(@d, 2, 3)
+
+    // Rotate right by 1: [1, 2, 3, 4, 5] -> [5, 1, 2, 3, 4]
+    deque_rotate(@d, 1 as isize)
+    if !deque_get_i64(@d, 0, @val) or val != 5 { deque_free(@d); return false }
+    if !deque_get_i64(@d, 1, @val) or val != 1 { deque_free(@d); return false }
+    if !deque_get_i64(@d, 4, @val) or val != 4 { deque_free(@d); return false }
+
+    // Rotate left by 1: [5, 1, 2, 3, 4] -> [1, 2, 3, 4, 5]
+    deque_rotate(@d, -1 as isize)
+    if !deque_get_i64(@d, 0, @val) or val != 1 { deque_free(@d); return false }
+    if !deque_get_i64(@d, 4, @val) or val != 5 { deque_free(@d); return false }
+
+    // Rotate right by 2: [1, 2, 3, 4, 5] -> [4, 5, 1, 2, 3]
+    deque_rotate(@d, 2 as isize)
+    if !deque_get_i64(@d, 0, @val) or val != 4 { deque_free(@d); return false }
+    if !deque_get_i64(@d, 1, @val) or val != 5 { deque_free(@d); return false }
+    if !deque_get_i64(@d, 2, @val) or val != 1 { deque_free(@d); return false }
+
+    // Shelf export
+    mut sh = deque_to_shelf(@d)
+    if shelf_len(@sh) != 5 { shelf_free(@sh); deque_free(@d); return false }
+    shelf_free(@sh)
+
+    deque_free(@d)
+    return true
+}
+
+act test_deque_auto_grow() -> bool {
+    mut d = deque_create_i64(8)
+    mut i: i64 = 0
+    loop i < 1000 {
+        deque_push_back_i64(@d, i)
+        i += 1
+    }
+    if deque_len(@d) != 1000 { deque_free(@d); return false }
+
+    // Verify FIFO order
+    mut expected: i64 = 0
+    mut v: i64 = 0
+    loop expected < 1000 {
+        if !deque_pop_front_i64(@d, @v) or v != expected {
+            deque_free(@d); return false
+        }
+        expected += 1
+    }
+    if deque_len(@d) != 0 { deque_free(@d); return false }
+
+    deque_free(@d)
+    return true
+}
+
+act main() -> i32 {
+    if !test_deque_basic() {
+        io.println("FAIL: test_deque_basic")
+        return 1
+    }
+    if !test_deque_indexing_and_rotation() {
+        io.println("FAIL: test_deque_indexing_and_rotation")
+        return 2
+    }
+    if !test_deque_auto_grow() {
+        io.println("FAIL: test_deque_auto_grow")
+        return 3
+    }
+
+    io.println("PASS: std.coll.deque all assertions succeeded")
+    return 0
+}

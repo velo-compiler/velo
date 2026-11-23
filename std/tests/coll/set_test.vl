@@ -1,0 +1,197 @@
+// Unit test suite for std.coll.set (pure Velo hash set wrapping map.vl).
+use sys.io
+use "../../mem/heap.vl"
+use "../../mem/ops.vl"
+use "../../str/slice.vl"
+use "../../coll/hash.vl"
+use "../../coll/map.vl"
+use "../../coll/map_ops.vl"
+use "../../coll/shelf.vl"
+use "../../coll/set.vl"
+
+act test_set_basic() -> bool {
+    mut s = set_create_i64(4)
+    if set_len(@s) != 0 or !set_is_empty(@s) {
+        set_free(@s); return false
+    }
+
+    if !set_add_i64(@s, 10) or !set_add_i64(@s, 20) or !set_add_i64(@s, 30) {
+        set_free(@s); return false
+    }
+
+    if set_len(@s) != 3 or set_is_empty(@s) {
+        set_free(@s); return false
+    }
+
+    if !set_contains_i64(@s, 10) or !set_contains_i64(@s, 20) or !set_contains_i64(@s, 30) {
+        set_free(@s); return false
+    }
+    if set_contains_i64(@s, 40) or set_contains_i64(@s, 999) {
+        set_free(@s); return false
+    }
+
+    // Adding duplicate does not increase length
+    if !set_add_i64(@s, 20) or set_len(@s) != 3 {
+        set_free(@s); return false
+    }
+
+    // Remove element
+    if !set_remove_i64(@s, 20) or set_len(@s) != 2 {
+        set_free(@s); return false
+    }
+    if set_contains_i64(@s, 20) {
+        set_free(@s); return false
+    }
+    // Remove non-existent element returns false
+    if set_remove_i64(@s, 20) {
+        set_free(@s); return false
+    }
+
+    // Clear
+    set_clear(@s)
+    if set_len(@s) != 0 or !set_is_empty(@s) {
+        set_free(@s); return false
+    }
+    if set_contains_i64(@s, 10) {
+        set_free(@s); return false
+    }
+
+    set_free(@s)
+    return true
+}
+
+act test_set_strings() -> bool {
+    mut s = set_create_str(8)
+    if !set_add_str(@s, "apple") { set_free(@s); return false }
+    if !set_add_str(@s, "banana") { set_free(@s); return false }
+    if !set_add_str(@s, "cherry") { set_free(@s); return false }
+
+    if set_len(@s) != 3 { set_free(@s); return false }
+    if !set_contains_str(@s, "apple") or !set_contains_str(@s, "banana") or !set_contains_str(@s, "cherry") {
+        set_free(@s); return false
+    }
+    if set_contains_str(@s, "durian") {
+        set_free(@s); return false
+    }
+
+    // Duplicate string
+    if !set_add_str(@s, "banana") or set_len(@s) != 3 {
+        set_free(@s); return false
+    }
+
+    // Remove string
+    if !set_remove_str(@s, "banana") or set_len(@s) != 2 {
+        set_free(@s); return false
+    }
+    if set_contains_str(@s, "banana") {
+        set_free(@s); return false
+    }
+
+    set_free(@s)
+    return true
+}
+
+act test_set_algebra() -> bool {
+    // A = {1, 2, 3}
+    mut a = set_create_i64(4)
+    set_add_i64(@a, 1)
+    set_add_i64(@a, 2)
+    set_add_i64(@a, 3)
+
+    // B = {2, 3, 4}
+    mut b = set_create_i64(4)
+    set_add_i64(@b, 2)
+    set_add_i64(@b, 3)
+    set_add_i64(@b, 4)
+
+    // C = {5, 6}
+    mut c = set_create_i64(4)
+    set_add_i64(@c, 5)
+    set_add_i64(@c, 6)
+
+    // 1. Union: A ∪ B = {1, 2, 3, 4}
+    mut u = set_union(@a, @b)
+    if set_len(@u) != 4 {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); return false
+    }
+    if !set_contains_i64(@u, 1) or !set_contains_i64(@u, 2) or !set_contains_i64(@u, 3) or !set_contains_i64(@u, 4) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); return false
+    }
+
+    // 2. Intersection: A ∩ B = {2, 3}
+    mut inter = set_intersection(@a, @b)
+    if set_len(@inter) != 2 {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); return false
+    }
+    if !set_contains_i64(@inter, 2) or !set_contains_i64(@inter, 3) or set_contains_i64(@inter, 1) or set_contains_i64(@inter, 4) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); return false
+    }
+
+    // 3. Difference: A \ B = {1}
+    mut diff = set_difference(@a, @b)
+    if set_len(@diff) != 1 or !set_contains_i64(@diff, 1) or set_contains_i64(@diff, 2) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); set_free(@diff); return false
+    }
+
+    // 4. Subset: inter is subset of a and b
+    if !set_is_subset(@inter, @a) or !set_is_subset(@inter, @b) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); set_free(@diff); return false
+    }
+    if set_is_subset(@a, @inter) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); set_free(@diff); return false
+    }
+
+    // 5. Disjoint: A and C share nothing
+    if !set_is_disjoint(@a, @c) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); set_free(@diff); return false
+    }
+    if set_is_disjoint(@a, @b) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); set_free(@diff); return false
+    }
+
+    // 6. Equals
+    mut a2 = set_create_i64(4)
+    set_add_i64(@a2, 3)
+    set_add_i64(@a2, 1)
+    set_add_i64(@a2, 2)
+    if !set_equals(@a, @a2) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); set_free(@diff); set_free(@a2); return false
+    }
+    if set_equals(@a, @b) {
+        set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); set_free(@diff); set_free(@a2); return false
+    }
+
+    // 7. Shelf export
+    mut sh = set_to_shelf(@a)
+    if shelf_len(@sh) != 3 {
+        shelf_free(@sh); set_free(@a); set_free(@b); set_free(@c); set_free(@u); set_free(@inter); set_free(@diff); set_free(@a2); return false
+    }
+    shelf_free(@sh)
+
+    set_free(@a)
+    set_free(@b)
+    set_free(@c)
+    set_free(@u)
+    set_free(@inter)
+    set_free(@diff)
+    set_free(@a2)
+    return true
+}
+
+act main() -> i32 {
+    if !test_set_basic() {
+        io.println("FAIL: test_set_basic")
+        return 1
+    }
+    if !test_set_strings() {
+        io.println("FAIL: test_set_strings")
+        return 2
+    }
+    if !test_set_algebra() {
+        io.println("FAIL: test_set_algebra")
+        return 3
+    }
+
+    io.println("PASS: std.coll.set all assertions succeeded")
+    return 0
+}

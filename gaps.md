@@ -2603,9 +2603,29 @@ convenience wrapper. Test with a 1M-row generated file asserting bounded memory
   - `bin/velo.exe run std/tests/csv_module_import_test.vl`: passed (`PASS: std.csv umbrella import all tests passed`).
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/csv/reader.vl` is 213 lines, `std/csv/stream.vl` is 160 lines, `std/csv/common.vl` is 104 lines (all <= 400).
 
-**78.8** Fill collection gaps: `std/coll/set.vl` (wrapping `map.vl`),
+**78.8** [COMPLETED] ✅ Fill collection gaps: `std/coll/set.vl` (wrapping `map.vl`),
 `std/coll/deque.vl` (growable ring), `std/coll/heap.vl` (binary heap). Each with
 a property test against a Python reference for a random operation sequence.
+- *Former Defect:*
+  Standard collections (`std/coll/`) lacked high-level data structure primitives for sets (`Set`), double-ended queues (`Deque`), and priority queues (`BinaryHeap`). Users were forced to hand-roll ad-hoc implementations across projects, leading to inconsistent performance, memory leaks, and lack of standard algebra or rotation algorithms. Additionally, generic monomorphization in `src/analysis/mono_subst.vl` corrupted fixed-size stack arrays `[N]T` into generic mangled identifiers whenever generic functions were present in the AST.
+- *Fix Applied:*
+  - Implemented `std/coll/set.vl`: Hash set backed by open-addressing hash table (`RawMap`) with linear probing, tombstone deletion, power-of-two growth, typed helpers for `i64` and strings, shelf extraction, and set algebra (`set_union`, `set_intersection`, `set_difference`, `set_is_subset`, `set_is_disjoint`, `set_equals`).
+  - Implemented `std/coll/deque.vl`: Double-ended queue wrapping dynamically growing circular ring buffer (`RawRing`) with amortized $O(1)$ push/pop at both ends, random indexing, bidirectional rotation (`deque_rotate`), and typed helpers.
+  - Implemented `std/coll/heap.vl`: Binary min/max heap backed by dynamic array storage with custom comparators, $O(\log N)$ push and pop, $O(1)$ peek, $O(\log N)$ push-pop and replace, $O(N)$ bottom-up heapify, and typed helpers for `i64` and `f64`.
+  - Re-exported all three collections in the `std/coll.vl` umbrella module.
+  - Fixed compiler bug in `src/analysis/mono_subst.vl` (`mono_normalize_type`): preserved fixed-size array types `[N]T` and `@[N]T` without generic mangling. Rebuilt and verified deterministic self-hosted compiler chain (Gen2 == Gen3 SHA-256 match and `bootstrap.c` sync).
+  - Implemented pure Velo unit tests: `std/tests/coll/set_test.vl`, `std/tests/coll/deque_test.vl`, `std/tests/coll/heap_test.vl`.
+  - Added property tests in `tests/test_std_coll.py` comparing randomized operation sequences against Python reference implementations (`set`, `collections.deque`, `heapq`).
+  - Documented Section 18 in `docs/SPECIFICATION.md`.
+- *Residual Limitation:*
+  Collection keys and elements must be homogeneous in size; dynamic sets and heaps allocate heap backing buffers using `heap_alloc`/`heap_realloc` and must be explicitly released via `set_free`, `deque_free`, or `bheap_free`.
+- *Verification:*
+  - `python -m pytest tests/test_std_coll.py -v`: 14 passed in 25.49s (including `test_std_coll_set_property_test`, `test_std_coll_deque_property_test`, `test_std_coll_heap_property_test`, and `test_std_module_imports`).
+  - `bin/velo.exe run std/tests/coll/set_test.vl`: passed (`PASS: std.coll.set all assertions succeeded`).
+  - `bin/velo.exe run std/tests/coll/deque_test.vl`: passed (`PASS: std.coll.deque all assertions succeeded`).
+  - `bin/velo.exe run std/tests/coll/heap_test.vl`: passed (`PASS: std.coll.heap all assertions succeeded`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (all <= 400).
+  - Bootstrap chain determinism verified: Gen2 and Gen3 emit identical `bootstrap.c`.
 
 **78.9** `std/math/decimal.vl`: fixed-point decimal with explicit scale and
 rounding modes, for money. Test: cent arithmetic, `0.1 + 0.2 == 0.3` in
@@ -3033,7 +3053,7 @@ listed so they are not rediscovered as surprises.
 | `bootstrap.c` is a 2.3 MB generated artifact in review | 67,952 lines | Compiler diffs are unreviewable at the artifact level | Phase 80.6 budget warning + Phase 76 tiering |
 | `std/async` is `poll(2)` on Linux | `std/async/poller_linux.vl:13` | O(n) wakeup scaling | Phase 70.4 (`epoll`) |
 | Overlapping `mem.copy`/`mem.set` remain C UB | `docs/gaps_archive.md:181` | Silent corruption on aliased buffers | Phase 74.4 [COMPLETED] ✅ |
-| No `Set`/`Deque`/priority queue | `std/coll/` inventory | Users hand-roll them, inconsistently | Phase 78.8 |
+| No `Set`/`Deque`/priority queue | `std/coll/` inventory | Users hand-roll them, inconsistently | Phase 78.8 [COMPLETED] ✅ |
 | `defer` takes a block, not an expression | Phase 58/69 semantics | Verbose cleanup sites | Phase 77.6 |
 | No `v2.0.0-pre` tag was published anywhere | tag exists locally; no remote configured | A consumer cannot pin the release commit | Add a remote and push tags (Phase 84) |
 | Release archive cannot be used without a C compiler | `scripts/release.py` ships `velo.exe` + sources, no prebuilt library triple | Consumers on compiler-less hosts are unsupported by design | Documented in Phase 71's residual limitation; revisit with Phase 70's platform set |

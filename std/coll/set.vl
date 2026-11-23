@@ -1,0 +1,259 @@
+// Pure Velo hash set backed by open-addressing hash table (zero C runtime dependencies).
+// Wraps std.coll.map (RawMap) with homogeneous element keys, linear probing,
+// tombstone recycling, power-of-two growth, and mathematical set algebra.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "hash.vl"
+use "map.vl"
+use "map_ops.vl"
+use "shelf.vl"
+
+// Raw hash set descriptor.
+view data RawSet {
+    map: RawMap
+}
+
+// Creates a new RawSet for elements of elem_size bytes with initial capacity.
+view act set_create(elem_size: usize, is_string: bool, initial_cap: usize) -> RawSet {
+    return RawSet {
+        map: map_create(elem_size, 8, is_string, initial_cap),
+    }
+}
+
+// Frees the allocated backing table and resets the set to empty.
+view act set_free(s: @RawSet) {
+    if s == null { return }
+    map_free(@s.map)
+}
+
+// Clears all elements from the set without releasing table capacity.
+view act set_clear(s: @RawSet) {
+    if s == null { return }
+    map_clear(@s.map)
+}
+
+// Returns the number of distinct elements currently stored in the set.
+view act set_len(s: @RawSet) -> usize {
+    if s == null { return 0 }
+    return map_len(@s.map)
+}
+
+// Returns the current allocated bucket capacity.
+view act set_cap(s: @RawSet) -> usize {
+    if s == null { return 0 }
+    return map_cap(@s.map)
+}
+
+// Returns true if the set contains zero elements.
+view act set_is_empty(s: @RawSet) -> bool {
+    return set_len(s) == 0
+}
+
+// Inserts an element into the set. Returns true on success.
+// If the element is already present, this is a no-op and returns true.
+view act set_add(s: @RawSet, elem_ptr: @u8) -> bool {
+    if s == null or elem_ptr == null { return false }
+    if map_has(@s.map, elem_ptr) { return true }
+    mut dummy: u64 = 0
+    let pd: @u64 = @dummy
+    return map_put(@s.map, elem_ptr, pd as @u8)
+}
+
+// Returns true if the set contains the given element.
+view act set_contains(s: @RawSet, elem_ptr: @u8) -> bool {
+    if s == null or elem_ptr == null { return false }
+    return map_has(@s.map, elem_ptr)
+}
+
+// Removes an element from the set using tombstone deletion.
+// Returns true if the element was found and removed, false if not present.
+view act set_remove(s: @RawSet, elem_ptr: @u8) -> bool {
+    if s == null or elem_ptr == null { return false }
+    return map_delete(@s.map, elem_ptr)
+}
+
+// --- String-specific helpers ---
+
+view act set_create_str(initial_cap: usize) -> RawSet {
+    return set_create(8, true, initial_cap)
+}
+
+view act set_add_str(s: @RawSet, str_val: string) -> bool {
+    if s == null or str_val == null { return false }
+    if map_has_str(@s.map, str_val) { return true }
+    mut k = str_val
+    let pk: @string = @k
+    mut dummy: u64 = 0
+    let pd: @u64 = @dummy
+    return map_put(@s.map, pk as @u8, pd as @u8)
+}
+
+view act set_contains_str(s: @RawSet, str_val: string) -> bool {
+    if s == null or str_val == null { return false }
+    return map_has_str(@s.map, str_val)
+}
+
+view act set_remove_str(s: @RawSet, str_val: string) -> bool {
+    if s == null or str_val == null { return false }
+    return map_delete_str(@s.map, str_val)
+}
+
+// --- Integer-specific helpers ---
+
+view act set_create_i64(initial_cap: usize) -> RawSet {
+    return set_create(8, false, initial_cap)
+}
+
+view act set_add_i64(s: @RawSet, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return set_add(s, pv as @u8)
+}
+
+view act set_contains_i64(s: @RawSet, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return set_contains(s, pv as @u8)
+}
+
+view act set_remove_i64(s: @RawSet, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return set_remove(s, pv as @u8)
+}
+
+// --- Set Algebra Operations ---
+
+// Exports all elements of the set into a dynamically allocated RawShelf.
+view act set_to_shelf(s: @RawSet) -> RawShelf {
+    if s == null { return shelf_create(8, 0) }
+    return map_keys_to_shelf(@s.map)
+}
+
+// Adds all elements from src into dst (in-place union).
+view act set_union_into(dst: @RawSet, src: @RawSet) -> bool {
+    if dst == null or src == null { return false }
+    mut i: usize = 0
+    loop i < src.map.cap {
+        let h = src.map.hashes[i]
+        if h != HASH_EMPTY and h != HASH_TOMBSTONE {
+            let k_ptr = (src.map.keys as usize + i * src.map.ksz) as @u8
+            if src.map.kstring {
+                let pk = k_ptr as @string
+                set_add_str(dst, pk[0])
+            } else {
+                set_add(dst, k_ptr)
+            }
+        }
+        i += 1
+    }
+    return true
+}
+
+// Creates a new set containing the union of a and b (a ∪ b).
+view act set_union(a: @RawSet, b: @RawSet) -> RawSet {
+    mut res = set_create(a.map.ksz, a.map.kstring, a.map.len + b.map.len)
+    set_union_into(@res, a)
+    set_union_into(@res, b)
+    return res
+}
+
+// Creates a new set containing elements present in both a and b (a ∩ b).
+view act set_intersection(a: @RawSet, b: @RawSet) -> RawSet {
+    mut cap = a.map.len
+    if b.map.len < cap { cap = b.map.len }
+    mut res = set_create(a.map.ksz, a.map.kstring, cap)
+    mut i: usize = 0
+    loop i < a.map.cap {
+        let h = a.map.hashes[i]
+        if h != HASH_EMPTY and h != HASH_TOMBSTONE {
+            let k_ptr = (a.map.keys as usize + i * a.map.ksz) as @u8
+            if a.map.kstring {
+                let pk = k_ptr as @string
+                if set_contains_str(b, pk[0]) {
+                    set_add_str(@res, pk[0])
+                }
+            } else {
+                if set_contains(b, k_ptr) {
+                    set_add(@res, k_ptr)
+                }
+            }
+        }
+        i += 1
+    }
+    return res
+}
+
+// Creates a new set containing elements in a that are not in b (a \ b).
+view act set_difference(a: @RawSet, b: @RawSet) -> RawSet {
+    mut res = set_create(a.map.ksz, a.map.kstring, a.map.len)
+    mut i: usize = 0
+    loop i < a.map.cap {
+        let h = a.map.hashes[i]
+        if h != HASH_EMPTY and h != HASH_TOMBSTONE {
+            let k_ptr = (a.map.keys as usize + i * a.map.ksz) as @u8
+            if a.map.kstring {
+                let pk = k_ptr as @string
+                if !set_contains_str(b, pk[0]) {
+                    set_add_str(@res, pk[0])
+                }
+            } else {
+                if !set_contains(b, k_ptr) {
+                    set_add(@res, k_ptr)
+                }
+            }
+        }
+        i += 1
+    }
+    return res
+}
+
+// Returns true if a is a subset of b (every element of a is in b).
+view act set_is_subset(a: @RawSet, b: @RawSet) -> bool {
+    if a == null or b == null { return false }
+    if a.map.len > b.map.len { return false }
+    mut i: usize = 0
+    loop i < a.map.cap {
+        let h = a.map.hashes[i]
+        if h != HASH_EMPTY and h != HASH_TOMBSTONE {
+            let k_ptr = (a.map.keys as usize + i * a.map.ksz) as @u8
+            if a.map.kstring {
+                let pk = k_ptr as @string
+                if !set_contains_str(b, pk[0]) { return false }
+            } else {
+                if !set_contains(b, k_ptr) { return false }
+            }
+        }
+        i += 1
+    }
+    return true
+}
+
+// Returns true if a and b have no elements in common.
+view act set_is_disjoint(a: @RawSet, b: @RawSet) -> bool {
+    if a == null or b == null { return true }
+    mut i: usize = 0
+    loop i < a.map.cap {
+        let h = a.map.hashes[i]
+        if h != HASH_EMPTY and h != HASH_TOMBSTONE {
+            let k_ptr = (a.map.keys as usize + i * a.map.ksz) as @u8
+            if a.map.kstring {
+                let pk = k_ptr as @string
+                if set_contains_str(b, pk[0]) { return false }
+            } else {
+                if set_contains(b, k_ptr) { return false }
+            }
+        }
+        i += 1
+    }
+    return true
+}
+
+// Returns true if a and b contain exactly the same elements.
+view act set_equals(a: @RawSet, b: @RawSet) -> bool {
+    if a == null or b == null { return false }
+    if a.map.len != b.map.len { return false }
+    return set_is_subset(a, b)
+}

@@ -1,0 +1,156 @@
+// Unit test suite for std.coll.heap (pure Velo binary heap and priority queue).
+use sys.io
+use "../../mem/heap.vl"
+use "../../mem/ops.vl"
+use "../../str/slice.vl"
+use "../../coll/sort.vl"
+use "../../coll/shelf.vl"
+use "../../coll/heap.vl"
+
+act test_min_heap_ordering() -> bool {
+    mut h = bheap_create_min_i64(8)
+    if bheap_len(@h) != 0 or !bheap_is_empty(@h) {
+        bheap_free(@h); return false
+    }
+
+    // Insert elements in arbitrary scrambled order: [40, 10, 50, 30, 20]
+    bheap_push_i64(@h, 40)
+    bheap_push_i64(@h, 10)
+    bheap_push_i64(@h, 50)
+    bheap_push_i64(@h, 30)
+    bheap_push_i64(@h, 20)
+
+    if bheap_len(@h) != 5 { bheap_free(@h); return false }
+
+    mut top: i64 = 0
+    if !bheap_peek_i64(@h, @top) or top != 10 { bheap_free(@h); return false }
+
+    // Pops must extract in sorted ascending order: 10, 20, 30, 40, 50
+    mut v: i64 = 0
+    if !bheap_pop_i64(@h, @v) or v != 10 { bheap_free(@h); return false }
+    if !bheap_pop_i64(@h, @v) or v != 20 { bheap_free(@h); return false }
+    if !bheap_pop_i64(@h, @v) or v != 30 { bheap_free(@h); return false }
+    if !bheap_pop_i64(@h, @v) or v != 40 { bheap_free(@h); return false }
+    if !bheap_pop_i64(@h, @v) or v != 50 { bheap_free(@h); return false }
+
+    if bheap_len(@h) != 0 or !bheap_is_empty(@h) { bheap_free(@h); return false }
+    if bheap_pop_i64(@h, @v) { bheap_free(@h); return false }
+
+    bheap_free(@h)
+    return true
+}
+
+act test_max_heap_ordering() -> bool {
+    mut h = bheap_create_max_i64(8)
+
+    // Insert [40, 10, 50, 30, 20]
+    bheap_push_i64(@h, 40)
+    bheap_push_i64(@h, 10)
+    bheap_push_i64(@h, 50)
+    bheap_push_i64(@h, 30)
+    bheap_push_i64(@h, 20)
+
+    mut top: i64 = 0
+    if !bheap_peek_i64(@h, @top) or top != 50 { bheap_free(@h); return false }
+
+    // Pops must extract in sorted descending order: 50, 40, 30, 20, 10
+    mut v: i64 = 0
+    if !bheap_pop_i64(@h, @v) or v != 50 { bheap_free(@h); return false }
+    if !bheap_pop_i64(@h, @v) or v != 40 { bheap_free(@h); return false }
+    if !bheap_pop_i64(@h, @v) or v != 30 { bheap_free(@h); return false }
+    if !bheap_pop_i64(@h, @v) or v != 20 { bheap_free(@h); return false }
+    if !bheap_pop_i64(@h, @v) or v != 10 { bheap_free(@h); return false }
+
+    bheap_free(@h)
+    return true
+}
+
+act test_heap_push_pop_and_replace() -> bool {
+    mut h = bheap_create_min_i64(8)
+    bheap_push_i64(@h, 20)
+    bheap_push_i64(@h, 30)
+    bheap_push_i64(@h, 40)
+
+    // push_pop with 10: 10 < 20 (min), so 10 is returned directly, heap unchanged
+    mut in_val: i64 = 10
+    mut out_val: i64 = 0
+    let pin1: @i64 = @in_val
+    let pout1: @i64 = @out_val
+    if !bheap_push_pop(@h, pin1 as @u8, pout1 as @u8) or out_val != 10 {
+        bheap_free(@h); return false
+    }
+    if bheap_len(@h) != 3 { bheap_free(@h); return false }
+
+    // push_pop with 25: 25 > 20, so 20 is returned, 25 is inserted
+    in_val = 25
+    let pin2: @i64 = @in_val
+    let pout2: @i64 = @out_val
+    if !bheap_push_pop(@h, pin2 as @u8, pout2 as @u8) or out_val != 20 {
+        bheap_free(@h); return false
+    }
+    mut top: i64 = 0
+    if !bheap_peek_i64(@h, @top) or top != 25 { bheap_free(@h); return false }
+
+    // replace with 50: pops 25, inserts 50
+    in_val = 50
+    let pin3: @i64 = @in_val
+    let pout3: @i64 = @out_val
+    if !bheap_replace(@h, pin3 as @u8, pout3 as @u8) or out_val != 25 {
+        bheap_free(@h); return false
+    }
+    if !bheap_peek_i64(@h, @top) or top != 30 { bheap_free(@h); return false }
+
+    bheap_free(@h)
+    return true
+}
+
+act test_heapify() -> bool {
+    // Fill backing buffer with unordered elements, then call bheap_heapify
+    mut h = bheap_create_min_i64(16)
+    // Directly append without sift-up
+    mut i: i64 = 10
+    loop i > 0 {
+        let dest = (h.data as usize + h.len * 8) as @u8
+        mut v = i * 7 % 13 // pseudorandom
+        let pv: @i64 = @v
+        copy(dest, pv as @u8, 8)
+        h.len += 1
+        i -= 1
+    }
+
+    bheap_heapify(@h)
+
+    // Elements should now pop in strictly non-decreasing order
+    mut prev: i64 = -1
+    mut cur: i64 = 0
+    loop bheap_len(@h) > 0 {
+        bheap_pop_i64(@h, @cur)
+        if cur < prev { bheap_free(@h); return false }
+        prev = cur
+    }
+
+    bheap_free(@h)
+    return true
+}
+
+act main() -> i32 {
+    if !test_min_heap_ordering() {
+        io.println("FAIL: test_min_heap_ordering")
+        return 1
+    }
+    if !test_max_heap_ordering() {
+        io.println("FAIL: test_max_heap_ordering")
+        return 2
+    }
+    if !test_heap_push_pop_and_replace() {
+        io.println("FAIL: test_heap_push_pop_and_replace")
+        return 3
+    }
+    if !test_heapify() {
+        io.println("FAIL: test_heapify")
+        return 4
+    }
+
+    io.println("PASS: std.coll.heap all assertions succeeded")
+    return 0
+}
