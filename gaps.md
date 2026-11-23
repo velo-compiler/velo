@@ -3294,11 +3294,29 @@ security issue, because the compiler is a build dependency.
 
 ## Tasks
 
-**82.1** Add `tests/test_compiler_no_crash.py`: a generator producing malformed
+**82.1 [COMPLETED] ✅** Add `tests/test_compiler_no_crash.py`: a generator producing malformed
 inputs (truncated tokens, mismatched braces, 10k-deep nesting, 1 MB identifiers,
 invalid UTF-8, NUL bytes, BOMs) and asserting for each that `velo check` and
 `velo emit-c` exit with a documented status and emit a diagnostic. Seed the
 generator with every historical crash input from Phases 52-69 and this file.
+
+- *Former Defect:*
+  The compiler had no automated crash-freedom or robustness test generator. Crashing inputs from past phases (`defer return` stack overflow in Phase 69, integer divide-by-zero traps in Phase 74) were discovered through manual probes. There was no test asserting that malformed inputs (unterminated strings/tokens, mismatched delimiters, extreme nesting, 1 MB identifiers, invalid UTF-8 bytes, embedded NULs, BOMs) never trigger unhandled OS hardware exceptions or signals (`0xC0000005`, `0xC00000FD`, `0xC0000094`, `0xC0000374`, etc.).
+- *Fix Applied:*
+  - Added `tests/test_compiler_no_crash.py`: parameterized test suite covering both `velo check` and `velo emit-c` on malformed and edge-case inputs generated across 8 distinct categories (45 inputs across check and emit-c, totaling 90 test cases):
+    1. Truncated tokens: unterminated strings, raw strings, chars, unclosed block comments, incomplete hex/bin/oct/float exponents.
+    2. Mismatched delimiters: braces, brackets, parentheses, unexpected closing tokens, interleaved delimiters.
+    3. Extreme nesting: 100-level and 500-level parenthesized expressions, 50-level nested blocks, and 10k-level nesting.
+    4. 1 MB identifiers: 1,000,000-character variable and function identifiers verifying lexer buffer resilience without heap corruption.
+    5. Invalid UTF-8: invalid continuation bytes, truncated multi-byte sequences, invalid UTF-8 start bytes (`0xFF`, `0xFE`).
+    6. Embedded NUL bytes: mid-identifier NUL, in-string NUL, in-block NUL, trailing NUL, leading NUL.
+    7. Byte Order Marks (BOMs): UTF-8 BOM (`\xef\xbb\xbf`), UTF-16 LE BOM (`\xff\xfe`), UTF-16 BE BOM (`\xfe\xff`).
+    8. Historical crash corpus from Phases 52-69 and `gaps.md`: 7 deferred transfer variations (`defer return`, `defer break`, `defer continue`, `defer fail`, `defer { return }`, etc.), constant division/modulo by zero (`1 / 0`, `1 % 0`, `x /= 0`), and constant-folded zero division (`10 / (5 - 5)`).
+  - Assertions guarantee that neither `velo check` nor `velo emit-c` crashes with an OS exception (`CRASH_EXIT_CODES`), that process exit codes are in the documented set `{0, 1}`, and that non-empty diagnostics are emitted whenever an input is rejected.
+- *Residual Limitation:*
+  Unbounded parser recursion on 10k-deep nesting triggers `STATUS_STACK_OVERFLOW` (`0xC00000FD`); marked `xfail` pending explicit depth limits in Task 82.2. Zero-declaration input (leading NUL byte `\0`) exits with status 1 without a diagnostic message; marked `xfail` pending error recovery improvements in Task 82.4.
+- *Verification:*
+  `python -m pytest tests/test_compiler_no_crash.py -v` -> 86 passed, 4 xfailed in 2.47s.
 
 **82.2** Add depth limits to the lexer/parser/checker with a named diagnostic
 and a test at limit-1, limit, limit+1.
