@@ -8,8 +8,8 @@ use "common/utils.vl"
 act print_usage() {
     println_str("Velo Programming Language Compiler (Self-Hosted v2.0)")
     println_str("Usage:")
-    println_str("  velo run <source.vl> [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives] [--unsafe-heap]")
-    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives] [--unsafe-heap]")
+    println_str("  velo run <source.vl> [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release|--profile] [-O<level>] [--no-line-directives] [--unsafe-heap]")
+    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release|--profile] [--no-line-directives] [--unsafe-heap]")
     println_str("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code")
     println_str("  velo check <source.vl> [--json] [--color auto|always|never]")
     println_str("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
@@ -41,6 +41,7 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
     mut cc = "gcc"
     mut debug_mode: bool = false
     mut release_mode: bool = false
+    mut profile_mode: bool = false
     mut unsafe_heap: bool = false
     mut opt_level = ""
     mut linker_sb = create_sb(256)
@@ -56,6 +57,8 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
             debug_mode = true
         } else if arg == "--release" {
             release_mode = true
+        } else if arg == "--profile" {
+            profile_mode = true
         } else if arg == "--unsafe-heap" {
             unsafe_heap = true
         } else if arg == "-O" and i + 1 < argc {
@@ -94,11 +97,15 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
         println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc', 'clang', or 'cl'.")
         return 1
     }
-    if debug_mode and release_mode {
-        println_str("[Velo Error] Cannot specify both --debug and --release")
+    if (debug_mode and release_mode) or (debug_mode and profile_mode) or (release_mode and profile_mode) {
+        println_str("[Velo Error] Cannot combine conflicting build modes (--debug, --release, --profile)")
         return 1
     }
     mut opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
+    if profile_mode {
+        mut p_sb = create_sb(str.len(opt_flags) + 16)
+        sb_append_str(@p_sb, opt_flags); sb_append_str(@p_sb, " -pg"); opt_flags = sb_to_string(@p_sb)
+    }
     if unsafe_heap {
         mut u_sb = create_sb(str.len(opt_flags) + 32)
         sb_append_str(@u_sb, opt_flags); sb_append_str(@u_sb, " -DVELO_UNSAFE_HEAP"); opt_flags = sb_to_string(@u_sb)
@@ -126,6 +133,7 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
     mut cc = "gcc"
     mut debug_mode: bool = false
     mut release_mode: bool = false
+    mut profile_mode: bool = false
     mut unsafe_heap: bool = false
     mut opt_level = ""
     mut linker_sb = create_sb(256)
@@ -144,6 +152,8 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
             debug_mode = true
         } else if arg == "--release" {
             release_mode = true
+        } else if arg == "--profile" {
+            profile_mode = true
         } else if arg == "--unsafe-heap" {
             unsafe_heap = true
         } else if arg == "-O" and i + 1 < argc {
@@ -182,11 +192,15 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
         println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc', 'clang', or 'cl'.")
         return 1
     }
-    if debug_mode and release_mode {
-        println_str("[Velo Error] Cannot specify both --debug and --release")
+    if (debug_mode and release_mode) or (debug_mode and profile_mode) or (release_mode and profile_mode) {
+        println_str("[Velo Error] Cannot combine conflicting build modes (--debug, --release, --profile)")
         return 1
     }
     mut opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
+    if profile_mode {
+        mut p_sb = create_sb(str.len(opt_flags) + 16)
+        sb_append_str(@p_sb, opt_flags); sb_append_str(@p_sb, " -pg"); opt_flags = sb_to_string(@p_sb)
+    }
     if unsafe_heap {
         mut u_sb = create_sb(str.len(opt_flags) + 32)
         sb_append_str(@u_sb, opt_flags); sb_append_str(@u_sb, " -DVELO_UNSAFE_HEAP"); opt_flags = sb_to_string(@u_sb)
@@ -210,4 +224,3 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
 act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool) -> i32 {
     return handle_build_cmd_opts(argc, argv, unsafe_index, no_line_directives, false)
 }
-

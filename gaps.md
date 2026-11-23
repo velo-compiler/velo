@@ -2851,10 +2851,28 @@ source lines for a sample program.
   - Combined suite: `python -m pytest tests/test_formatter.py tests/test_ci_matrix.py tests/test_debug_line_mapping.py tests/test_repl.py tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -q`: 82 passed in 21.92s.
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`formatter.vl` at 254, `formatter_rules.vl` at 160).
 
-**79.7** Add a profiler hook: `--profile` that emits `-pg` (GCC/Clang) or
+**79.7 [COMPLETED] ✅** Add a profiler hook: `--profile` that emits `-pg` (GCC/Clang) or
 `/PROFILE` guidance, plus a documented `perf`/`Instruments` workflow in
 `docs/PROFILING.md`. A language promising "native speed" owes users a way to
 measure it.
+
+- *Former Defect:*
+  Velo had no CLI profiler flag or compiler instrumentation hooks. Developers had no standard mechanism to instrument native binaries for profiling, no `gmon.out` generation with `gprof`, no MSVC `/PROFILE` linker configuration, and no documentation explaining how to profile native Velo programs across Linux, macOS, and Windows.
+- *Fix Applied:*
+  - Added `--profile` CLI flag to `velo build`, `velo run`, and `velo test` in `src/cli_cmd.vl` and `src/main.vl`.
+  - Added build mode validation preventing conflicting combinations (`--debug`, `--release`, `--profile`).
+  - Updated backend compiler driver (`src/backend/driver_cc.vl`) to pass `-pg` during GCC and Clang compilation and linking.
+  - Added MSVC backend support: when profiling is requested under `cl.exe`, emits `/Zi` debug symbols and links with `/DEBUG /PROFILE`.
+  - Content-hashed build cache automatically isolates `--profile` artifacts via closure hashing of the updated optimization flags.
+  - Authored comprehensive guide in `docs/PROFILING.md` documenting `gprof` (flat profile & call graph), Linux `perf` and flamegraphs, macOS `Instruments` (`xctrace`) and `sample`, and Windows Visual Studio Profiler / WPR / WPA workflows.
+  - Added regression test suite `tests/test_profiling.py` asserting usage documentation, conflicting flag diagnostics, `gmon.out` generation on build and run, and cache isolation.
+- *Residual Limitation:*
+  Statistical hardware-counter profiling via `perf` and `Instruments` operates on binary symbols without needing source-level compiler instrumentation.
+- *Verification:*
+  - `python -m pytest tests/test_profiling.py -v`: 5 passed in 1.31s (including live `gmon.out` generation and inspection).
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 31.95s (Gen2 == Gen3 == `bootstrap.c` determinism verified).
+  - Combined suite: `python -m pytest tests/test_profiling.py tests/test_formatter.py tests/test_ci_matrix.py tests/test_debug_line_mapping.py tests/test_repl.py tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -q`: 87 passed in 23.11s.
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`driver_cc.vl` at 344, `main.vl` at 262, `cli_cmd.vl` at 226).
 
 **79.8** Add `velo doc --json` and serve it to the LSP so hover text comes from
 the same source as the generated docs (`src/backend/docgen.vl` already walks the

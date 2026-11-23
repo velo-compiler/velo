@@ -34,13 +34,16 @@ act find_vcvars() -> string {
 }
 
 // Translates linker flags (-Ldir, -llib) into MSVC /link options.
-act append_msvc_linker_flags(sb: @StringBuilder, linker_flags: string, debug_mode: bool) {
-    if (linker_flags == null or str.len(linker_flags) == 0) and not debug_mode {
+act append_msvc_linker_flags(sb: @StringBuilder, linker_flags: string, debug_mode: bool, profile_mode: bool) {
+    if (linker_flags == null or str.len(linker_flags) == 0) and not debug_mode and not profile_mode {
         return
     }
     sb_append_str(sb, " /link")
-    if debug_mode {
+    if debug_mode or profile_mode {
         sb_append_str(sb, " /DEBUG")
+    }
+    if profile_mode {
+        sb_append_str(sb, " /PROFILE")
     }
     if linker_flags == null or str.len(linker_flags) == 0 {
         return
@@ -212,6 +215,10 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
         sb_append_str(@cmd_sb, " ")
     }
     mut is_debug = false
+    mut is_profile = false
+    if opt_flags != null and str.contains(opt_flags, "-pg") {
+        is_profile = true
+    }
     if opt_flags == null or str.len(opt_flags) == 0 {
         sb_append_str(@cmd_sb, "/O2 ")
     } else if str.contains(opt_flags, "-O0") or str.contains(opt_flags, "-g") {
@@ -222,13 +229,16 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
     } else {
         sb_append_str(@cmd_sb, "/O2 ")
     }
+    if is_profile and not is_debug {
+        sb_append_str(@cmd_sb, "/Zi ")
+    }
     if str.contains(opt_flags, "-DVELO_UNSAFE_HEAP") {
         sb_append_str(@cmd_sb, "/DVELO_UNSAFE_HEAP ")
     }
     sb_append_str(@cmd_sb, quote_path(path_to_native_str(c_file_path)))
     sb_append_str(@cmd_sb, " /Fe:")
     sb_append_str(@cmd_sb, quote_path(path_to_native_str(out_exe_path)))
-    append_msvc_linker_flags(@cmd_sb, linker_flags, is_debug)
+    append_msvc_linker_flags(@cmd_sb, linker_flags, is_debug, is_profile)
     let env_ldflags = os.get_env("VELO_LDFLAGS")
     if str.len(env_ldflags) > 0 {
         sb_append_str(@cmd_sb, " ")
