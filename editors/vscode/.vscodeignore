@@ -1,0 +1,12 @@
+# Development artifacts excluded from packaged .vsix builds
+# (used by both `pack_vsix.py` include-list semantics and future `vsce` runs)
+.vscodeignore
+install.ps1
+uninstall.ps1
+pack_vsix.py
+tests
+ci
+__pycache__
+*.pyc
+ROADMAP.md
+*.vsix

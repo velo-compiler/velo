@@ -1,0 +1,60 @@
+// Grammar Conformance Fixture
+// Comprehensive Velo syntax verifying grammar-lexer alignment.
+use sys.io
+use std.fs
+
+/// Type alias definition
+aka UserId = u64
+
+/// Struct definition with alignment attribute and field defaults
+data Point #align(16) {
+    x: f32 = 0.0
+    y: f32 = 0.0
+}
+
+/// Enumeration with discrete states
+kind Status {
+    Idle
+    Active
+    Failed
+}
+
+/// Helper function with visibility modifier and primitive types
+view act add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+act main() {
+    // Variable declarations and primitive literals
+    mut count: i32 = 42
+    let pi: f64 = 3.14159
+    let hex_val: u32 = 0xFFu32
+    let bin_val: u8 = 0b1010u8
+    let oct_val: u32 = 0o77
+    let ch: u8 = '\n'
+    let is_ready: bool = true
+    let ptr: @Point = null
+
+    // Control flow and logical operators
+    if is_ready and count > 0 {
+        count -= 1
+    } else {
+        count = 0
+    }
+
+    // Range loop with break and continue
+    loop i in 0..10 {
+        if i == 5 {
+            break
+        } else {
+            continue
+        }
+    }
+
+    // Zone allocation, defer cleanup, and string interpolation
+    zone {
+        let p = Point{ x: 1.0, y: 2.0 }
+        defer io.println("deferred cleanup complete")
+        io.println("count: {count}, pi: {pi}")
+    }
+}

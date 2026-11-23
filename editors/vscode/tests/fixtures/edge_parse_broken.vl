@@ -1,0 +1,7 @@
+use sys.io
+
+pickle = definitely_not_a_decl
+
+act main() -> i32 {
+    return 0
+}

@@ -14,6 +14,7 @@ __pycache__/
 # Editor
 .vscode/
 .idea/
+*.vsix
 
 # VeloKV Database
 *.aof

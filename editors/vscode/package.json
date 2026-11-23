@@ -1,0 +1,202 @@
+{
+  "name": "velo-lang",
+  "displayName": "Velo Language Support",
+  "description": "Syntax highlighting, code suggestions, and on-save compiler diagnostics for the Velo programming language (.vl)",
+  "version": "0.6.0",
+  "publisher": "velo",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/velo-lang/velo"
+  },
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "activationEvents": [
+    "onLanguage:velo"
+  ],
+  "main": "./js/extension.js",
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Linters"
+  ],
+  "keywords": [
+    "velo",
+    "systems",
+    "zero-gc",
+    "c99",
+    "highlighting",
+    "snippets",
+    "diagnostics"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "velo",
+        "aliases": [
+          "Velo",
+          "velo"
+        ],
+        "extensions": [
+          ".vl"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "velo-pkg",
+        "aliases": [
+          "Velo Package Manifest",
+          "velo-pkg"
+        ],
+        "filenames": [
+          "velo.pkg"
+        ],
+        "configuration": "./pkg-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "velo",
+        "scopeName": "source.velo",
+        "path": "./syntaxes/velo.tmLanguage.json"
+      },
+      {
+        "language": "velo-pkg",
+        "scopeName": "source.velo.pkg",
+        "path": "./syntaxes/velo.pkg.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "velo",
+        "path": "./snippets/velo.json"
+      },
+      {
+        "language": "velo-pkg",
+        "path": "./snippets/velo.pkg.json"
+      }
+    ],
+    "configuration": {
+      "title": "Velo",
+      "properties": {
+        "velo.mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "check",
+            "lsp"
+          ],
+          "enumDescriptions": [
+            "Highlighting and snippets only (v0.2 behavior, default).",
+            "Run `velo check --json` on save/open and report compiler diagnostics in Problems.",
+            "Embedded Python LSP server: live diagnostics, outline, hover, go-to-definition, completions (uses the Python compiler)."
+          ],
+          "default": "lsp",
+          "description": "Editor integration mode."
+        },
+        "velo.lspServer": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "native",
+            "python"
+          ],
+          "enumDescriptions": [
+            "Auto-detect: use native Velo LSP server if available, fallback to bundled Python server.",
+            "Use native high-performance Velo LSP server (bin/velo.exe lsp).",
+            "Use bundled Python LSP server (velo_lsp.py)."
+          ],
+          "default": "auto",
+          "description": "LSP server engine used when velo.mode is 'lsp'."
+        },
+        "velo.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Interpreter used to launch the embedded LSP server (velo.mode \"lsp\"). Examples: \"python\", or an absolute path like \"C:/Python311/python.exe\"."
+        },
+        "velo.repoPath": {
+          "type": "string",
+          "default": "",
+          "description": "Checkout root containing velo/ (the Python compiler package) for velo.mode \"lsp\"; e.g. \"C:/projects/easylang\". LSP diagnostics come from the Python compiler."
+        },
+        "velo.compilerPath": {
+          "type": "string",
+          "default": "velo",
+          "description": "Compiler command invoked as `<compilerPath> [compilerArgs] check --json <file>`. Examples: a built Stage 2 binary (C:/projects/easylang/bin/velo.exe) or Stage 1 via compilerPath \"python\" plus compilerArgs [\"C:/projects/easylang/velo.py\"]."
+        },
+        "velo.compilerArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra arguments placed before the `check` verb (e.g. [\"C:/projects/easylang/velo.py\"] when compilerPath is \"python\")."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "velo.run",
+        "title": "Run Current File",
+        "category": "Velo"
+      },
+      {
+        "command": "velo.build",
+        "title": "Build Current File",
+        "category": "Velo"
+      },
+      {
+        "command": "velo.test",
+        "title": "Run Current File Tests",
+        "category": "Velo"
+      },
+      {
+        "command": "velo.pkg.run",
+        "title": "Run Package",
+        "category": "Velo"
+      },
+      {
+        "command": "velo.pkg.build",
+        "title": "Build Package",
+        "category": "Velo"
+      },
+      {
+        "command": "velo.pkg.check",
+        "title": "Check Package Manifest",
+        "category": "Velo"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "velo.run",
+        "key": "ctrl+f5",
+        "when": "editorLangId == velo"
+      },
+      {
+        "command": "velo.build",
+        "key": "ctrl+shift+b",
+        "when": "editorLangId == velo"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "velo.run",
+          "group": "navigation@1",
+          "when": "editorLangId == velo"
+        },
+        {
+          "command": "velo.build",
+          "group": "navigation@2",
+          "when": "editorLangId == velo"
+        },
+        {
+          "command": "velo.test",
+          "group": "navigation@3",
+          "when": "editorLangId == velo"
+        }
+      ]
+    }
+  }
+}

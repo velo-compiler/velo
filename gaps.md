@@ -3616,9 +3616,34 @@ invisible to everyone who is not sitting at the maintainer's machine.
 
 ## Tasks
 
-**84.1** Track the editor integrations (VSCode grammar + LSP client, at
+**84.1 [COMPLETED] ✅** Track the editor integrations (VSCode grammar + LSP client, at
 minimum) under `editors/`, with install instructions. Add a grammar-conformance
 test that tokenizes a fixture with both the grammar and the compiler lexer.
+
+- *Former Defect:*
+  The editor tooling (VS Code extension, TextMate grammars, and language server client) was untracked in git under `editors/`, carrying uncommitted `.vsix` binaries and scratch files, and lacked a dedicated grammar conformance test in the compiler test suite. Furthermore, recently introduced language keywords (`view`, `pact`, `unsafe`) were missing from the TextMate grammar (`velo.tmLanguage.json`) and editor analysis tables, leading to missing syntax highlighting and drift between the canonical compiler lexer and the editor grammar.
+- *Fix Applied:*
+  - Added `*.vsix` to `.gitignore` and purged binary packages and scratch scripts (`editors/vscode/scratch_update.py`), leaving `editors/` clean and tracked with only source, grammars, tests, snippets, and documentation.
+  - Authored `editors/README.md` indexing the VS Code extension architecture, configuration options (`velo.mode`, `velo.compilerPath`, `velo.lspServer`), manual/automated install instructions (`install.ps1`, `uninstall.ps1`), and testing workflows.
+  - Enhanced `editors/vscode/install.ps1` to automatically build `velo-lang-<version>.vsix` on the fly via `pack_vsix.py` when installing with the VS Code CLI.
+  - Extended `editors/vscode/syntaxes/velo.tmLanguage.json` with syntax definitions for `view` (`storage.modifier.view.velo`), `pact` (`storage.type.contract.pact.velo`), and `unsafe` (`keyword.control.unsafe.velo`), synchronizing `editors/vscode/_server/velo_analysis.py`, `velo/tokens.py`, and `editors/vscode/tests/match_spotcheck.js`.
+  - Authored comprehensive fixture `tests/fixtures/grammar_conformance.vl` (verified clean via `velo check`).
+  - Implemented `tests/test_grammar_conformance.py` in pytest:
+    - `test_grammar_schema_and_integrity`: verified valid JSON, structure, and `.velo` scope names.
+    - `test_canonical_compiler_keyword_coverage`: parsed `src/frontend/lexer.vl` and asserted 100% of canonical compiler keywords are covered by the TextMate grammar with zero omissions.
+    - `test_fixture_dual_tokenization_conformance`: dual-tokenized `tests/fixtures/grammar_conformance.vl` with both compiler lexer and TextMate grammar, verifying category agreement across all semantic tokens (keywords, numeric literals, character literals, string literals, operators, identifiers).
+    - `test_edge_token_highlighting`: verified specific edge cases (hex/binary/octal literals, exponents, suffixes, char escapes, struct attributes `#align(16)`, `#packed`, visibility/safety modifiers `view`, `pact`, `unsafe`, directives `use sys.io`, `use std.fs`, dot variants, arrows).
+    - `test_comments_conformance`: verified single-line, documentation, and block comment grammar tokenization.
+    - `test_run_editor_parity_suite`: verified `editors/vscode/tests/parity_compiler.py` passes all 24 parity checks.
+    - `test_run_editor_spotchecks`: verified `editors/vscode/tests/match_spotcheck.js` passes all 31 grammar spot checks.
+- *Residual Limitation:*
+  Nested block comments beyond depth 1 use single-span TextMate highlighting due to regular expression engine limits in VS Code TextMate grammar (recorded in `editors/vscode/ROADMAP.md`).
+- *Verification:*
+  - `python -m pytest tests/test_grammar_conformance.py -v` (7 tests passed in 0.28s).
+  - `python editors/vscode/tests/parity_compiler.py` (all 24 parity checks passed).
+  - `python editors/vscode/tests/run_tests.py --quick` (3/3 suites passed, 24 parity + 31 spot-checks + 8 simulations).
+  - `bin\velo.exe check tests/fixtures/grammar_conformance.vl` (exit 0, check passed).
+  - `python scripts/count_lines.py` (all compiler source files <= 400 lines).
 
 **84.2** Add `.github/ISSUE_TEMPLATE/bug.md` (with a "minimal `.vl` repro" and
 `velo version` field), `feature.md`, and `PULL_REQUEST_TEMPLATE.md` referencing

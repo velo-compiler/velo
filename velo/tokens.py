@@ -41,6 +41,9 @@ class TokenType(Enum):
     # 6.5: `test` keyword for native test declarations
     TEST = auto()
     FAIL = auto()
+    UNSAFE = auto()
+    PACT = auto()
+    VIEW = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -149,6 +152,9 @@ KEYWORDS = {
     "of": TokenType.OF,
     "test": TokenType.TEST,
     "fail": TokenType.FAIL,
+    "unsafe": TokenType.UNSAFE,
+    "pact": TokenType.PACT,
+    "view": TokenType.VIEW,
 }
 
 @dataclass

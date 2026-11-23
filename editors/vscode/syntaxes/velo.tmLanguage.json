@@ -1,0 +1,534 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Velo",
+  "scopeName": "source.velo",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#characters"
+    },
+    {
+      "include": "#attributes"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#std_functions"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#pointers"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#variants"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.velo",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.block.documentation.velo",
+          "begin": "/\\*\\*",
+          "end": "\\*/"
+        },
+        {
+          "name": "comment.line.double-slash.velo",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.velo",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.raw.backtick.velo",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.velo",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "include": "#string_escapes"
+            },
+            {
+              "include": "#interpolation"
+            }
+          ]
+        }
+      ]
+    },
+    "string_escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.unicode.velo",
+          "match": "\\\\u[0-9a-fA-F]{4}"
+        },
+        {
+          "name": "constant.character.escape.hex.velo",
+          "match": "\\\\x[0-9a-fA-F]{2}"
+        },
+        {
+          "name": "constant.character.escape.velo",
+          "match": "\\\\[nrt0'\"\\\\{}]"
+        }
+      ]
+    },
+    "interpolation": {
+      "patterns": [
+        {
+          "name": "meta.interpolation.velo",
+          "begin": "\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.begin.velo"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.end.velo"
+            }
+          },
+          "patterns": [
+            {
+              "include": "$self"
+            }
+          ]
+        }
+      ]
+    },
+    "characters": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.velo",
+          "match": "'(\\\\u[0-9a-fA-F]{4}|\\\\x[0-9a-fA-F]{2}|\\\\[nrt0'\"\\\\]|[^'\\\\])'",
+          "captures": {
+            "1": {
+              "name": "constant.character.velo"
+            }
+          }
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "meta.attribute.velo",
+          "match": "(#)([a-zA-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.attribute.velo"
+            },
+            "2": {
+              "name": "entity.other.attribute-name.velo"
+            }
+          }
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.velo",
+          "match": "\\b0[xX][0-9a-fA-F_]+([a-zA-Z0-9_]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.binary.velo",
+          "match": "\\b0[bB][01_]+([a-zA-Z0-9_]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.octal.velo",
+          "match": "\\b0[oO][0-7_]+([a-zA-Z0-9_]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.float.velo",
+          "match": "\\b[0-9][0-9_]*(\\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?|[eE][+-]?[0-9_]+)(f32|f64)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.velo",
+          "match": "\\b[0-9][0-9_]*(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)?\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "match": "\\b(sys)\\.(io|mem|fs)\\b",
+          "captures": {
+            "1": {
+              "name": "support.class.sys.velo"
+            },
+            "2": {
+              "name": "support.class.module.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(std)\\.(io|fs|mem|path|os|str|time|math|json|fmt|coll)\\b",
+          "captures": {
+            "1": {
+              "name": "support.class.std.velo"
+            },
+            "2": {
+              "name": "support.class.module.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(io)\\.(print|print_char|println)\\b",
+          "captures": {
+            "1": {
+              "name": "support.module.io.velo"
+            },
+            "2": {
+              "name": "support.function.builtin.io.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(mem)\\.(alloc|alloc_with|copy|create_arena|current|destroy_arena|free|heap_alloc|heap_used|move|realloc|set|used)\\b",
+          "captures": {
+            "1": {
+              "name": "support.module.mem.velo"
+            },
+            "2": {
+              "name": "support.function.builtin.mem.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(fs)\\.(copy|create_dir|create_dir_all|exists|fclose|fopen|fread|fseek|fwrite|is_dir|is_file|read_dir|read_file|remove|remove_file|rename|size|write_file)\\b",
+          "captures": {
+            "1": {
+              "name": "support.module.fs.velo"
+            },
+            "2": {
+              "name": "support.function.builtin.fs.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(str)\\.(concat|contains|ends_with|format|heap_concat|heap_format|heap_replace|heap_to_lower|heap_to_upper|heap_trim|index_of|len|replace|split|starts_with|to_lower|to_upper|trim)\\b",
+          "captures": {
+            "1": {
+              "name": "support.module.str.velo"
+            },
+            "2": {
+              "name": "support.function.builtin.str.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(math)\\.(abs|acos|asin|atan2|cbrt|ceil|clamp|cos|exp|floor|lerp|log|log2|max|min|pow|round|sin|sqrt|tan)\\b",
+          "captures": {
+            "1": {
+              "name": "support.module.math.velo"
+            },
+            "2": {
+              "name": "support.function.builtin.math.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(time)\\.(delta|now|sleep_ms)\\b",
+          "captures": {
+            "1": {
+              "name": "support.module.time.velo"
+            },
+            "2": {
+              "name": "support.function.builtin.time.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(os)\\.(args|exit|get_env|set_env)\\b",
+          "captures": {
+            "1": {
+              "name": "support.module.os.velo"
+            },
+            "2": {
+              "name": "support.function.builtin.os.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b(thread)\\.(acquire|free|join|mutex|release|spawn)\\b",
+          "captures": {
+            "1": {
+              "name": "support.module.thread.velo"
+            },
+            "2": {
+              "name": "support.function.builtin.thread.velo"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "storage.type.function.act.velo",
+          "match": "\\bact\\b"
+        },
+        {
+          "name": "storage.type.struct.data.velo",
+          "match": "\\bdata\\b"
+        },
+        {
+          "name": "storage.type.enum.kind.velo",
+          "match": "\\bkind\\b"
+        },
+        {
+          "name": "keyword.control.zone.velo",
+          "match": "\\bzone\\b"
+        },
+        {
+          "name": "keyword.control.loop.velo",
+          "match": "\\b(loop|in)\\b"
+        },
+        {
+          "name": "storage.modifier.mut.velo",
+          "match": "\\bmut\\b"
+        },
+        {
+          "name": "storage.modifier.let.velo",
+          "match": "\\blet\\b"
+        },
+        {
+          "name": "keyword.control.flow.velo",
+          "match": "\\b(if|else|return|break|continue|fail)\\b"
+        },
+        {
+          "name": "keyword.control.match.on.velo",
+          "match": "\\bon\\b"
+        },
+        {
+          "name": "keyword.control.defer.velo",
+          "match": "\\bdefer\\b"
+        },
+        {
+          "name": "keyword.control.directive.velo",
+          "match": "\\b(use|extern)\\b"
+        },
+        {
+          "name": "constant.language.boolean.velo",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.velo",
+          "match": "\\bnull\\b"
+        },
+        {
+          "name": "keyword.operator.logical.word.velo",
+          "match": "\\b(and|or|not)\\b"
+        },
+        {
+          "name": "keyword.operator.cast.as.velo",
+          "match": "\\bas\\b"
+        },
+        {
+          "name": "keyword.operator.overload.op.velo",
+          "match": "\\bop\\b"
+        },
+        {
+          "name": "keyword.declaration.alias.velo",
+          "match": "^aka\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\s*=\\s*@?[a-z][A-Za-z0-9_]*\\b)"
+        },
+        {
+          "name": "keyword.other.sizeof.velo",
+          "match": "\\bsizeof\\b"
+        },
+        {
+          "name": "variable.language.special.it.velo",
+          "match": "\\bit\\b"
+        },
+        {
+          "name": "keyword.control.collection.shelf.velo",
+          "match": "\\b(shelf|map|ring|bitset|heap|of)\\b"
+        },
+        {
+          "name": "storage.type.test.velo",
+          "match": "\\btest\\b"
+        },
+        {
+          "name": "storage.modifier.view.velo",
+          "match": "\\bview\\b"
+        },
+        {
+          "name": "storage.type.contract.pact.velo",
+          "match": "\\bpact\\b"
+        },
+        {
+          "name": "keyword.control.unsafe.velo",
+          "match": "\\bunsafe\\b"
+        }
+      ]
+    },
+    "pointers": {
+      "patterns": [
+        {
+          "name": "keyword.operator.dereference.velo",
+          "match": "\\.@\\b"
+        },
+        {
+          "name": "keyword.operator.pointer.velo",
+          "match": "@"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "match": "\\b(act)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.function.act.velo"
+            },
+            "2": {
+              "name": "entity.name.function.declaration.velo"
+            }
+          }
+        },
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.call.velo"
+            }
+          }
+        }
+      ]
+    },
+    "variants": {
+      "patterns": [
+        {
+          "name": "variable.other.enummember.dot.velo",
+          "match": "\\.([A-Z][a-zA-Z0-9_]*)"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.integer.velo",
+          "match": "\\b(i8|i16|i32|i64|isize|u8|u16|u32|u64|usize)\\b"
+        },
+        {
+          "name": "support.type.primitive.float.velo",
+          "match": "\\b(f32|f64)\\b"
+        },
+        {
+          "name": "support.type.primitive.simd.velo",
+          "match": "\\b(f32x4|i32x4)\\b"
+        },
+        {
+          "name": "support.type.primitive.other.velo",
+          "match": "\\b(bool|string|void|dyn)\\b"
+        },
+        {
+          "name": "entity.name.type.user.velo",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.velo",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.range.velo",
+          "match": "\\.\\.=?|\\.\\."
+        },
+        {
+          "name": "keyword.operator.bitwise.assign.velo",
+          "match": "<<=|>>=|&=|\\|=|\\^="
+        },
+        {
+          "name": "keyword.operator.bitwise.shift.velo",
+          "match": "<<|>>"
+        },
+        {
+          "name": "keyword.operator.bitwise.velo",
+          "match": "&|\\||\\^|~"
+        },
+        {
+          "name": "keyword.operator.comparison.velo",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.assignment.compound.velo",
+          "match": "\\+=|-=|\\*=|/="
+        },
+        {
+          "name": "keyword.operator.assignment.velo",
+          "match": "=(?!=)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.velo",
+          "match": "\\+|-|\\*|/|%"
+        },
+        {
+          "name": "keyword.operator.logical.symbol.velo",
+          "match": "&&|\\|\\||!"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.readwrite.velo",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "std_functions": {
+      "patterns": [
+        {
+          "name": "support.function.std.velo",
+          "match": "\\b(f32x4_splat|i32x4_splat|println_str|print_str|println_i32|println_f64|println_bool|println_char|print_i32|print_f64|print_bool|print_char|eprint|eprint_str|eprint_i64|eprint_u64|eprint_f64|eprint_bool|eprint_byte|eprintln|io_flush_stdout|io_flush_stderr|io_stdout_handle|io_stderr_handle|io_stdin_handle|writer_init|writer_flush|writer_write_byte|writer_write_bytes|writer_write_str|writer_write_i64|writer_write_u64|writer_write_f64|reader_init|reader_read_byte|reader_read_line|fs_exists|fs_read_to_str|fs_write_str|fs_remove_file_str|fs_is_file|fs_is_dir|fs_dir_open|fs_dir_next|fs_dir_close|fs_dir_entry|fs_copy_file|entry_name|entry_name_cstr|entry_size|entry_is_dir|entry_is_file|path_join_str|path_normalize_str|path_dirname_to_str|path_stem_to_str|path_basename_str|path_extname_str|path_is_abs|path_to_native_str|path_to_unix_str|heap_alloc|heap_realloc|heap_free|heap_free_str|heap_total_allocated|arena_init|arena_alloc|arena_alloc_zeroed|arena_free|arena_reset|json_parse|json_stringify|json_get|json_array_len|json_array_get|json_is_null|json_is_bool|json_is_number|json_is_string|json_is_array|json_is_object|json_as_bool|json_as_number|json_as_string|fmt_sprintf|fmt_write_int|fmt_write_float|fmt_write_bool|time_now_us|time_delta_us|time_sleep_ms|duration_as_ms|duration_as_secs|duration_as_us|duration_as_ns|os_exit|os_args|os_get_env|os_set_env|args_count|args_get|args_has_flag|math_sin|math_cos|math_tan|math_asin|math_acos|math_atan2|math_sqrt|math_cbrt|math_pow|math_exp|math_log|math_log2|math_abs|math_min|math_max|math_clamp|math_floor|math_ceil|math_round)\\b"
+        }
+      ]
+    }
+  }
+}

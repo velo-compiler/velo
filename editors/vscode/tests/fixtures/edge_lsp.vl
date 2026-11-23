@@ -1,0 +1,19 @@
+use sys.io
+
+data Entity {
+    x: i32
+    y: i32 = 0
+}
+
+aka EntityId = u32
+
+act spawn(px: i32) -> Entity {
+    let e: Entity = Entity { x: px, y: 0 }
+    return e
+}
+
+act main() -> i32 {
+    let e: Entity = spawn(1)
+    io.println("ok")
+    return 0
+}

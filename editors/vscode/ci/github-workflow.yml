@@ -1,0 +1,87 @@
+# ============================================================================
+# Velo language extension CI blueprint (Phase 4 of editors/vscode/ROADMAP.md)
+# ============================================================================
+# The extension tree (editors/) is currently untracked owner material, so
+# GitHub Actions cannot see it yet. When the owner decides to track the
+# extension (prerequisite for marketplace publication), copy this file to
+# .github/workflows/extension.yml and commit the extension tree.
+#
+# Job 1 (quality) runs the dependency-free Phase 4 suite exactly as verified
+# locally: python + node only, zero installs:
+#     python editors/vscode/tests/run_tests.py
+#
+# Job 2 (grammar-and-package) is the npm tier from the roadmap
+# (`vscode-tmgrammar-test` grammar snapshots + `vsce package`). It runs only
+# in CI (ephemeral node_modules; the shipped extension keeps its zero-runtime-
+# dependency claim). Before activating, extend tests/grammar/*.test case
+# files from the cases in tests/match_spotcheck.js and adjust tool flags to
+# the installed version.
+#
+# Job 3 (toolchain-probes) runs the suite's --real tier: the REAL compilers
+# (Stage 1 python + Stage 2 native) through the extension plumbing. Requires
+# the msys2/GCC bootstrap of bin/velo.exe, hence its own Windows job.
+# ============================================================================
+name: velo-extension
+
+on:
+  push:
+    paths: ["editors/vscode/**"]
+  pull_request:
+    paths: ["editors/vscode/**"]
+  workflow_dispatch:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Parity + simulation suite (stub + server tiers)
+        run: python editors/vscode/tests/run_tests.py
+
+  grammar-and-package:
+    needs: quality
+    runs-on: ubuntu-latest
+    if: false   # activate with the extension tree; see header
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Snapshot grammar tests and package the vsix
+        working-directory: editors/vscode
+        run: |
+          npm install --no-save vscode-tmgrammar-test @vscode/vsce
+          npx vscode-tmgrammar-test -g syntaxes/velo.tmLanguage.json tests/grammar/*.test
+          npx vsce package --no-dependencies
+      - uses: actions/upload-artifact@v4
+        with:
+          name: velo-lang-vsix
+          path: editors/vscode/*.vsix
+
+  toolchain-probes:
+    needs: quality
+    runs-on: windows-latest
+    if: false   # optional full-fidelity tier; activate when the tree is tracked
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+      - name: Bootstrap the compiler chain
+        shell: msys2 {0}
+        run: |
+          export PATH="/ucrt64/bin:$PATH"
+          python velo.py build src/main.vl -o bin/velo_gen1.exe
+          ./bin/velo_gen1.exe build src/main.vl -o bin/velo_gen2.exe
+          ./bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe
+          cp bin/velo_gen3.exe bin/velo.exe
+      - name: Real-compiler tier (Stage 1 + Stage 2 through the extension)
+        run: python editors/vscode/tests/run_tests.py --real

@@ -1,0 +1,6 @@
+use sys.io
+
+act main() -> i32 {
+    io.println("check me")
+    return 0
+}

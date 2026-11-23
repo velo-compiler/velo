@@ -1,0 +1,55 @@
+{
+  "Package Manifest": {
+    "prefix": "pkg",
+    "body": [
+      "pkg \"${1:my_project}\" {",
+      "\tversion: \"${2:0.1.0}\"",
+      "\tentry: \"${3:src/main.vl}\"",
+      "\tauthors: [\"${4:Author}\"]",
+      "\tdescription: \"${5:A new Velo project}\"",
+      "}",
+      "",
+      "deps {",
+      "\t$0",
+      "}",
+      "",
+      "link {",
+      "\tlibs: []",
+      "\tflags: [\"-O2\"]",
+      "}"
+    ],
+    "description": "Standard Velo package manifest (velo.pkg)"
+  },
+  "Git Dependency": {
+    "prefix": "depgit",
+    "body": [
+      "${1:dep_name}: git \"${2:https://github.com/velo-lang/dep}\" @ \"${3:v1.0}\""
+    ],
+    "description": "Git repository dependency with tag/branch"
+  },
+  "Local Dependency": {
+    "prefix": "deplocal",
+    "body": [
+      "${1:dep_name}: local \"${2:../local_dep}\""
+    ],
+    "description": "Local directory dependency"
+  },
+  "Semver Dependency": {
+    "prefix": "depsemver",
+    "body": [
+      "${1:dep_name}: \"${2:1.0.0}\""
+    ],
+    "description": "Registry semver dependency"
+  },
+  "Link Configuration": {
+    "prefix": "link",
+    "body": [
+      "link {",
+      "\tlibs: [\"${1:library}\"]",
+      "\tflags: [\"${2:-O3}\"]",
+      "}"
+    ],
+    "description": "Linker libraries and flags configuration"
+  }
+}
+

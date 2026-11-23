@@ -1,0 +1,566 @@
+{
+  "Main Function": {
+    "prefix": [
+      "main",
+      "actmain"
+    ],
+    "body": [
+      "use sys.io",
+      "",
+      "act main() {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Velo main entry point"
+  },
+  "Main Function with Args": {
+    "prefix": "mainargs",
+    "body": [
+      "use sys.io",
+      "",
+      "act main(argc: i32, argv: @string) -> i32 {",
+      "\t$0",
+      "\treturn 0",
+      "}"
+    ],
+    "description": "Velo main function with CLI arguments"
+  },
+  "Function Declaration": {
+    "prefix": [
+      "act",
+      "fn"
+    ],
+    "body": [
+      "act ${1:name}(${2:params}) -> ${3:i32} {",
+      "\t$0",
+      "\treturn ${4:0}",
+      "}"
+    ],
+    "description": "Function declaration with return type"
+  },
+  "Void Function": {
+    "prefix": "actv",
+    "body": [
+      "act ${1:name}(${2:params}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Void function declaration"
+  },
+  "Generic Function": {
+    "prefix": "actg",
+    "body": [
+      "act ${1:name}[${2:T}](${3:a: T, b: T}) -> ${2:T} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Generic function declaration"
+  },
+  "Struct Declaration": {
+    "prefix": [
+      "data",
+      "struct"
+    ],
+    "body": [
+      "data ${1:Name} {",
+      "\t${2:field}: ${3:f32}",
+      "\t$0",
+      "}"
+    ],
+    "description": "Composite struct blueprint"
+  },
+  "Generic Struct": {
+    "prefix": "datag",
+    "body": [
+      "data ${1:Box}[${2:T}] {",
+      "\t${3:value}: ${2:T}",
+      "}"
+    ],
+    "description": "Generic struct declaration"
+  },
+  "Enum Declaration": {
+    "prefix": [
+      "kind",
+      "enum"
+    ],
+    "body": [
+      "kind ${1:Direction} {",
+      "\t${2:North},",
+      "\t${3:East},",
+      "\t${4:South},",
+      "\t${5:West}",
+      "}"
+    ],
+    "description": "Pure enum declaration"
+  },
+  "Tagged Union Declaration": {
+    "prefix": "kindu",
+    "body": [
+      "kind ${1:Event} {",
+      "\t${2:Quit},",
+      "\t${3:KeyDown}: i32,",
+      "\t${4:Click}(button: i32, x: f32, y: f32)",
+      "}"
+    ],
+    "description": "Payload-bearing tagged union"
+  },
+  "Range Loop": {
+    "prefix": [
+      "loop",
+      "loopr"
+    ],
+    "body": [
+      "loop ${1:i} in ${2:0}..${3:count} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Range loop"
+  },
+  "Range Loop with Step": {
+    "prefix": "loops",
+    "body": [
+      "loop ${1:i} in ${2:0}..${3:10}:${4:2} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Range loop with step"
+  },
+  "Inclusive Range Loop": {
+    "prefix": "loopi",
+    "body": [
+      "loop ${1:i} in ${2:1}..=${3:5} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Inclusive range loop (..=)"
+  },
+  "Repeat Count Loop": {
+    "prefix": "loopc",
+    "body": [
+      "loop ${1:5} {",
+      "\t// iteration index is available in 'it'",
+      "\t$0",
+      "}"
+    ],
+    "description": "Repeat count loop with implicit 'it'"
+  },
+  "Condition Loop": {
+    "prefix": [
+      "loopw",
+      "while"
+    ],
+    "body": [
+      "loop ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Condition loop (replaces while)"
+  },
+  "Infinite Loop": {
+    "prefix": "loopinf",
+    "body": [
+      "loop {",
+      "\tif ${1:condition} { break }",
+      "\t$0",
+      "}"
+    ],
+    "description": "Infinite loop with break"
+  },
+  "Pattern Matching (on)": {
+    "prefix": [
+      "on",
+      "match",
+      "switch"
+    ],
+    "body": [
+      "on ${1:expr} {",
+      "\t${2:pattern} => {",
+      "\t\t$0",
+      "\t}",
+      "\telse => {",
+      "\t}",
+      "}"
+    ],
+    "description": "Signature 'on' pattern matching statement"
+  },
+  "Zone Bump Arena": {
+    "prefix": "zone",
+    "body": [
+      "zone {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Hardware bump arena with 1-cycle O(1) cleanup"
+  },
+  "Zone Allocate": {
+    "prefix": [
+      "memalloc",
+      "alloc"
+    ],
+    "body": [
+      "${1:ptr}: @${2:Type} = mem.alloc(@${2:Type}, ${3:count})"
+    ],
+    "description": "Allocate memory inside active zone arena"
+  },
+  "Heap Allocate with Defer": {
+    "prefix": [
+      "heapalloc",
+      "malloc"
+    ],
+    "body": [
+      "let ${1:buf} = mem.heap_alloc(@${2:Type}, ${3:count})",
+      "defer mem.free(${1:buf})",
+      "$0"
+    ],
+    "description": "Allocate persistent heap memory safely paired with defer"
+  },
+  "Defer Statement": {
+    "prefix": "defer",
+    "body": [
+      "defer ${1:mem.free(ptr)}"
+    ],
+    "description": "LIFO execution upon scope exit or return"
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If statement"
+  },
+  "If-Else Statement": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition} {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If-else statement"
+  },
+  "Mutable Variable": {
+    "prefix": "mut",
+    "body": [
+      "mut ${1:name}: ${2:i32} = ${3:0}"
+    ],
+    "description": "Mutable variable declaration"
+  },
+  "Immutable Variable": {
+    "prefix": "let",
+    "body": [
+      "let ${1:name} = ${2:value}"
+    ],
+    "description": "Immutable variable declaration"
+  },
+  "Print Line": {
+    "prefix": [
+      "println",
+      "pl",
+      "io"
+    ],
+    "body": [
+      "io.println(\"${1:message}\")"
+    ],
+    "description": "Print line to console with newline"
+  },
+  "Print": {
+    "prefix": "print",
+    "body": [
+      "io.print(\"${1:message}\")"
+    ],
+    "description": "Print to console without newline"
+  },
+  "File Read": {
+    "prefix": "fsread",
+    "body": [
+      "let ${1:content} = fs.read_file(\"${2:file.txt}\")",
+      "if ${1:content} != null {",
+      "\tdefer mem.free(${1:content})",
+      "\t$0",
+      "}"
+    ],
+    "description": "Read file safely into heap memory with defer free"
+  },
+  "File Write": {
+    "prefix": "fswrite",
+    "body": [
+      "let ok = fs.write_file(\"${1:file.txt}\", ${2:content})"
+    ],
+    "description": "Write string content to file"
+  },
+  "String Length": {
+    "prefix": "strlen",
+    "body": [
+      "str.len(${1:text})"
+    ],
+    "description": "Get length of string in bytes"
+  },
+  "Import sys.io": {
+    "prefix": "useio",
+    "body": [
+      "use sys.io"
+    ],
+    "description": "Import standard console I/O library"
+  },
+  "Import sys.mem": {
+    "prefix": "usemem",
+    "body": [
+      "use sys.mem"
+    ],
+    "description": "Import memory management library"
+  },
+  "Import sys.fs": {
+    "prefix": "usefs",
+    "body": [
+      "use sys.fs"
+    ],
+    "description": "Import file system library"
+  },
+  "Type Alias": {
+    "prefix": "aka",
+    "body": [
+      "aka ${1:Name} = ${2:u64}",
+      "$0"
+    ],
+    "description": "Named primitive alias (contextual keyword, top level only)"
+  },
+  "Struct with Field Defaults": {
+    "prefix": "datad",
+    "body": [
+      "data ${1:Name} {",
+      "\t${2:field}: ${3:f32} = ${4:0.0}",
+      "\t$0",
+      "}"
+    ],
+    "description": "Struct with default field initializers (omitted fields fall back to defaults)"
+  },
+  "Aligned Struct": {
+    "prefix": [
+      "dataalign",
+      "dalign"
+    ],
+    "body": [
+      "data ${1:Vec4} #align(${2:16}) {",
+      "\t${3:x}: ${4:f32} = ${5:0.0}",
+      "\t$0",
+      "}"
+    ],
+    "description": "#align(N) struct for SIMD-friendly layout"
+  },
+  "Packed Struct": {
+    "prefix": [
+      "datapacked",
+      "dpack"
+    ],
+    "body": [
+      "data ${1:Header} #packed {",
+      "\t${2:magic}: ${3:u16} = ${4:0}",
+      "\t$0",
+      "}"
+    ],
+    "description": "#packed wire-format struct without padding"
+  },
+  "Kind Variant Dispatch": {
+    "prefix": [
+      "onk",
+      "onvar"
+    ],
+    "body": [
+      "on ${1:e} {",
+      "\t.${2:Quit} => {",
+      "\t\t$0",
+      "\t}",
+      "\t.${3:KeyDown}(${4:key}) => {",
+      "\t\t${5:io.println(\"key {key}\")}",
+      "\t}",
+      "\telse => {",
+      "\t}",
+      "}"
+    ],
+    "description": "'on' dispatch over kind variants with payload binding (no type annotations in arms)"
+  },
+  "Operator Overload": {
+    "prefix": [
+      "opover",
+      "opfn"
+    ],
+    "body": [
+      "act op ${1:+}(${2:a}: ${3:Vector2}, ${4:b}: ${3:Vector2}) -> ${3:Vector2} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Operator overload declaration (act op <symbol>)"
+  },
+  "External C Function": {
+    "prefix": "extern",
+    "body": [
+      "extern act ${1:function_name}(${2:params}) -> ${3:i32}"
+    ],
+    "description": "Direct foreign C function interface declaration"
+  },
+  "Main Function (std.io)": {
+    "prefix": [
+      "main_std",
+      "mainio"
+    ],
+    "body": [
+      "use std.io",
+      "",
+      "act main() {",
+      "\tprintln_str(\"${1:Hello, Velo!}\")",
+      "\t$0",
+      "}"
+    ],
+    "description": "Pure-Velo standard I/O main entry point"
+  },
+  "Main Function with Args (std.io)": {
+    "prefix": "mainargs_std",
+    "body": [
+      "use std.io",
+      "use std.os",
+      "",
+      "act main(argc: i32, argv: @string) -> i32 {",
+      "\t$0",
+      "\treturn 0",
+      "}"
+    ],
+    "description": "Pure-Velo main entry point with command-line arguments"
+  },
+  "Read File to String (std.fs)": {
+    "prefix": [
+      "fs_read",
+      "readfile"
+    ],
+    "body": [
+      "let ${1:content}: string = fs_read_to_str(\"${2:file.txt}\")",
+      "defer heap_free_str(${1:content})",
+      "$0"
+    ],
+    "description": "Read entire file to a heap-allocated string with defer cleanup"
+  },
+  "Write String to File (std.fs)": {
+    "prefix": [
+      "fs_write",
+      "writefile"
+    ],
+    "body": [
+      "fs_write_str(\"${1:file.txt}\", ${2:content})",
+      "$0"
+    ],
+    "description": "Write string content directly to a file"
+  },
+  "Directory Traversal (std.fs)": {
+    "prefix": [
+      "fs_walk",
+      "dir_walk"
+    ],
+    "body": [
+      "let ${1:dir}: @Dir = fs_dir_open(\"${2:.}\")",
+      "if ${1:dir} != null {",
+      "\tdefer fs_dir_close(${1:dir})",
+      "\tloop fs_dir_next(${1:dir}) {",
+      "\t\tlet ${3:entry}: @DirEntry = fs_dir_entry(${1:dir})",
+      "\t\tlet ${4:name}: string = entry_name_cstr(${3:entry})",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Streaming directory traversal with safe handle defer"
+  },
+  "Path Join (std.path)": {
+    "prefix": [
+      "path_join",
+      "pjoin"
+    ],
+    "body": [
+      "let ${1:path}: string = path_join_str(\"${2:dir}\", \"${3:file.txt}\")",
+      "defer heap_free_str(${1:path})",
+      "$0"
+    ],
+    "description": "Platform-safe path joining with defer cleanup"
+  },
+  "Parse JSON Document (std.json)": {
+    "prefix": [
+      "json_parse",
+      "jsonp"
+    ],
+    "body": [
+      "let ${1:doc}: @JsonValue = json_parse(${2:json_str})",
+      "$0"
+    ],
+    "description": "Parse a JSON document string into an AST value"
+  },
+  "Heap Allocation (std.mem)": {
+    "prefix": [
+      "heap_buf",
+      "halloc"
+    ],
+    "body": [
+      "let ${1:buf}: @u8 = heap_alloc(${2:1024})",
+      "defer heap_free(${1:buf})",
+      "$0"
+    ],
+    "description": "Raw OS heap allocation with defer heap_free"
+  },
+  "Formatted String (std.fmt)": {
+    "prefix": [
+      "fmt_sprintf",
+      "sprintf"
+    ],
+    "body": [
+      "let ${1:s}: string = fmt_sprintf(\"${2:%s: %d}\", ${3:arg1}, ${4:arg2})",
+      "defer heap_free_str(${1:s})",
+      "$0"
+    ],
+    "description": "Format a string using standard format specifiers"
+  },
+  "Custom Arena Zone": {
+    "prefix": [
+      "zonea",
+      "zone_arena"
+    ],
+    "body": [
+      "zone ${1:arena} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Scoped zone block targeting a custom standalone arena"
+  },
+  "SIMD f32x4 Vector": {
+    "prefix": [
+      "simdf",
+      "f32x4"
+    ],
+    "body": [
+      "let ${1:v}: f32x4 = f32x4(${2:1.0}, ${3:2.0}, ${4:3.0}, ${5:4.0})",
+      "$0"
+    ],
+    "description": "128-bit 4-lane single-precision float SIMD vector"
+  },
+  "SIMD i32x4 Vector": {
+    "prefix": [
+      "simdi",
+      "i32x4"
+    ],
+    "body": [
+      "let ${1:v}: i32x4 = i32x4(${2:1}, ${3:2}, ${4:3}, ${5:4})",
+      "$0"
+    ],
+    "description": "128-bit 4-lane 32-bit integer SIMD vector"
+  },
+  "Create Standalone Arena": {
+    "prefix": [
+      "create_arena",
+      "marena"
+    ],
+    "body": [
+      "let ${1:arena}: @Allocator = mem.create_arena(${2:1024 * 1024})",
+      "defer mem.destroy_arena(${1:arena})",
+      "$0"
+    ],
+    "description": "Create a heap-backed standalone arena with automatic defer cleanup"
+  }
+}
