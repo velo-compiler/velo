@@ -15,16 +15,14 @@ act emit_c_typed_var(sb: @StringBuilder, type_name: string, var_name: string) {
     if is_fixed_array_type(type_name) {
         let elem_t = fixed_array_elem_type(type_name)
         let arr_len = fixed_array_len(type_name)
-        sb_append_str(sb, map_type_to_c(elem_t))
-        sb_append_char(sb, ' ')
+        emit_type_str_then_space(sb, elem_t)
         sb_append_str(sb, var_name)
         sb_append_char(sb, '[')
         sb_append_int(sb, arr_len as i32)
         sb_append_char(sb, ']')
         return
     }
-    sb_append_str(sb, map_type_to_c(type_name))
-    sb_append_char(sb, ' ')
+    emit_type_str_then_space(sb, type_name)
     sb_append_str(sb, var_name)
 }
 
@@ -126,4 +124,3 @@ act emit_array_index(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, tt: 
     }
     sb_append_char(sb, ']')
 }
-

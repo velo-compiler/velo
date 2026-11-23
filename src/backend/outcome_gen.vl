@@ -209,7 +209,7 @@ act emit_or_return_var_decl(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNod
     }
     sb_append_indent(sb, indent + 1); sb_append_str(sb, "return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.err } };\n")
     sb_append_indent(sb, indent); sb_append_str(sb, "}\n")
-    sb_append_indent(sb, indent); sb_append_str(sb, map_type_to_c(stmt.type_name)); sb_append_char(sb, ' '); sb_append_str(sb, stmt.name); sb_append_str(sb, " = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.val;\n")
+    sb_append_indent(sb, indent); emit_type_str_then_space(sb, stmt.type_name); sb_append_str(sb, stmt.name); sb_append_str(sb, " = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.val;\n")
 }
 
 act emit_or_return_assign(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {

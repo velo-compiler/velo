@@ -42,6 +42,12 @@ act emit_type_then_space(sb: @StringBuilder, ct: CType) {
     sb_append_char(sb, ' ')
 }
 
+// Emits a Velo type name as C type into a StringBuilder followed explicitly by a single space delimiter.
+act emit_type_str_then_space(sb: @StringBuilder, type_name: string) {
+    let ct = map_type_to_ctype(type_name)
+    emit_type_then_space(sb, ct)
+}
+
 // Maps primitive Velo types to their canonical typed C99 CType.
 act primitive_type_to_ctype(type_name: string) -> CType {
     if type_name == null or str.len(type_name) == 0 or type_name == "void" { return make_ctype("void", 0, false, false) }

@@ -13,6 +13,7 @@ use "codegen_stmt.vl"
 use "test_gen.vl"
 use "codegen_line.vl"
 use "codegen_decl.vl"
+use "codegen_types.vl"
 
 // Emits complete C99 translation unit from an AST ProgramNode.
 act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
@@ -33,7 +34,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     loop cur != null {
         if cur.kind == DECL_FUNCTION and cur.name != "main" {
             if is_anon_act_name(cur.name) { sb_append_str(@sb, "static ") }
-            sb_append_str(@sb, map_type_to_c(cur.return_type)); sb_append_char(@sb, ' '); sb_append_str(@sb, cur.name)
+            emit_type_str_then_space(@sb, cur.return_type); sb_append_str(@sb, cur.name)
             emit_param_list(@sb, cur.first_param, cur.param_count); sb_append_str(@sb, ";\n")
         }
         cur = cur.next
@@ -54,7 +55,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
                 st.zone_counter = 0
             } else {
                 if is_anon_act_name(cur.name) { sb_append_str(@sb, "static ") }
-                sb_append_str(@sb, map_type_to_c(cur.return_type)); sb_append_char(@sb, ' '); sb_append_str(@sb, cur.name)
+                emit_type_str_then_space(@sb, cur.return_type); sb_append_str(@sb, cur.name)
                 emit_param_list(@sb, cur.first_param, cur.param_count); sb_append_str(@sb, " {\n")
                 st.current_func_ret_type = cur.return_type
                 st.current_func_name = cur.name

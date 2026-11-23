@@ -25,7 +25,7 @@ use "codegen_types.vl"
 act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, c_type: CType, vname: string) {
     if is_literal_range_step(stmt.loop_start, stmt.loop_end, stmt.loop_step) {
         let is_rev = is_reverse_loop_range(stmt.loop_start, stmt.loop_end)
-        sb_append_str(sb, "for ("); ctype_render(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = ")
+        sb_append_str(sb, "for ("); emit_type_then_space(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = ")
         emit_c_expr(sb, st, stmt.loop_start)
         if stmt.is_inclusive {
             // W2: no condition here; the terminator owns the exit test.
@@ -58,7 +58,7 @@ act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode
     // Dynamic range: evaluate start, end, and optional step exactly once into temporaries,
     // and lower runtime dynamic direction selection based on start > end.
     sb_append_str(sb, "for (")
-    ctype_render(sb, c_type)
+    emit_type_then_space(sb, c_type)
     sb_append_str(sb, "__start_")
     sb_append_str(sb, vname)
     sb_append_str(sb, " = (")

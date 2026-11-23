@@ -145,15 +145,15 @@ act is_literal_range_step(start_expr: @ExprNode, end_expr: @ExprNode, step_expr:
 // (SPEC 7.2 item 9) requires the induction to be at least as wide as its
 // bounds, so every 64-bit type in the type system must be listed explicitly.
 act loop_var_c_type(type_name: string) -> CType {
-    if type_name == null { return make_ctype("int32_t", 32, true, true) }
-    if type_name == "i64" { return make_ctype("int64_t", 64, true, true) }
-    if type_name == "u64" { return make_ctype("uint64_t", 64, false, true) }
-    if type_name == "usize" { return make_ctype("size_t", 64, false, true) }
-    if type_name == "isize" { return make_ctype("ptrdiff_t", 64, true, true) }
-    if type_name == "u32" { return make_ctype("uint32_t", 32, false, true) }
-    if type_name == "i16" { return make_ctype("int16_t", 16, true, true) }
-    if type_name == "u16" { return make_ctype("uint16_t", 16, false, true) }
-    if type_name == "i8" { return make_ctype("int8_t", 8, true, true) }
-    if type_name == "u8" { return make_ctype("uint8_t", 8, false, true) }
-    return make_ctype("int32_t", 32, true, true)
+    if type_name == null { return make_ctype("int32_t", 32, true, false) }
+    if type_name == "i64" { return make_ctype("int64_t", 64, true, false) }
+    if type_name == "u64" { return make_ctype("uint64_t", 64, false, false) }
+    if type_name == "usize" { return make_ctype("size_t", 64, false, false) }
+    if type_name == "isize" { return make_ctype("ptrdiff_t", 64, true, false) }
+    if type_name == "u32" { return make_ctype("uint32_t", 32, false, false) }
+    if type_name == "i16" { return make_ctype("int16_t", 16, true, false) }
+    if type_name == "u16" { return make_ctype("uint16_t", 16, false, false) }
+    if type_name == "i8" { return make_ctype("int8_t", 8, true, false) }
+    if type_name == "u8" { return make_ctype("uint8_t", 8, false, false) }
+    return make_ctype("int32_t", 32, true, false)
 }

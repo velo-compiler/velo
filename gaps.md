@@ -3004,8 +3004,25 @@ already enforces this).
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`codegen_stmt.vl` at 394).
   - `python scripts/check_formatting.py`: SUCCESS.
 
-**80.3** Replace the trailing-space convention with explicit emission helpers
+**80.3 [COMPLETED] ✅** Replace the trailing-space convention with explicit emission helpers
 (`emit_type_then_space`), which makes `"int32_t "` structurally impossible.
+
+- *Former Defect:*
+  Type emission across variable declarations, struct fields, parameter lists, extern prototypes, and loop headers relied on manual, ad-hoc space concatenations (`sb_append_str(sb, map_type_to_c(...)); sb_append_char(sb, ' ')`), while `loop_var_c_type` still returned types formatted for concatenation. This made spacing conventions implicit and fragile, risking glued identifiers or double-space formatting drift across codegen modules.
+- *Fix Applied:*
+  - Added `emit_type_str_then_space(sb: @StringBuilder, type_name: string)` in `src/backend/codegen_types.vl`, unifying type resolution and single-space emission.
+  - Converted `loop_var_c_type` in `src/backend/codegen_lit.vl` to return `CType` with `needs_space = false`, structurally eliminating all trailing-space conventions from type values.
+  - Replaced manual type-space concatenations in `src/backend/codegen_stmt.vl` and `src/backend/range_gen.vl` with `emit_type_then_space(sb, c_type)`.
+  - Replaced manual type-space emissions in `src/backend/array_gen.vl`, `src/backend/codegen_c.vl`, `src/backend/codegen_decl.vl`, and `src/backend/outcome_gen.vl` with `emit_type_str_then_space(sb, type_name)` and `emit_c_typed_var`.
+  - Added regression test suite `tests/test_explicit_type_emission.py` asserting structural adoption across codegen files, exact C token spacing, and runtime execution.
+- *Residual Limitation:*
+  None. Spacing between C type identifiers and variable/member names is now governed by explicit helpers throughout the compiler backend.
+- *Verification:*
+  - `python -m pytest tests/test_explicit_type_emission.py tests/test_typed_codegen_returns.py -v`: 8 passed in 0.75s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py tests/test_loop_induction_width.py -q`: 35 passed in 46.34s.
+  - `scripts/check_determinism.py`: SHA-256 MATCH between Gen2 and Gen3 (`713f90730007d3d369395dd9bd15e83f1c9c4d05cdcefd2b92372019e7245d6a`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`type_checker.vl` at 396; `codegen_decl.vl` reduced to 365).
+  - `python scripts/check_formatting.py`: SUCCESS.
 
 **80.4** Consolidate `fs_gen`/`os_gen`/`time_gen` (and the `range_gen` emit
 ladder) behind one `IntrinsicEmitter` dispatch keyed by namespace + member, so a
