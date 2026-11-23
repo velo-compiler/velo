@@ -45,6 +45,17 @@ act main(argc: i32, argv: @string) -> i32 {
         return 0
     }
 
+    if cmd == "explain" or cmd == "--explain" {
+        if argc < 3 {
+            println_str("Usage: velo explain <VELO-E####>")
+            return 1
+        }
+        let code = argv[2]
+        let explanation = error_code_explain(code)
+        println_str(explanation)
+        return 0
+    }
+
     if cmd == "lsp" or cmd == "--lsp" {
         return handle_lsp_command()
     }

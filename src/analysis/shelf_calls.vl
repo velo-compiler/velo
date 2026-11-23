@@ -68,7 +68,7 @@ act check_shelf_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
             let got = infer_expr_type(st, expr.first_arg)
             if got == "unknown" { return "unknown" }
             if got == "void" {
-                report_error("semantic", expr.line, expr.col, "shelf[dyn] put: cannot box a void value"); st.error_count += 1
+                diag("VELO-E0016", expr.line, expr.col); st.error_count += 1
                 return "unknown"
             }
             let err = dyn_boxable_error(got)

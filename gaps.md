@@ -2719,7 +2719,23 @@ A language is adopted on its worst debugging session, not its best.
 **79.1** Add an error-code registry: `docs/ERRORS.md` with codes, plus a
 `diag(code, line, col, args...)` helper replacing inline literals in
 `src/common/diagnostics.vl`. Migrate the 20 most common messages first; add a
-test that every code in the registry is emitted by at least one test fixture.
+test that every code in the registry is emitted by at least one test fixture. - [COMPLETED] ✅
+- *Former Defect:*
+  Compiler diagnostics were formatted as unstructured, ad-hoc inline string literals across the frontend and analysis modules. Users had no searchable error codes, no centralized index explaining failure modes, no documentation on how to resolve common compile errors, and no CLI tool to explain an error code.
+- *Fix Applied:*
+  - Created `docs/ERRORS.md`: a complete catalog and registry index defining error code conventions (`VELO-E####`), severity guidelines, reference table for codes `VELO-E0001` through `VELO-E0020`, and detailed per-error sections with root cause, erroneous code example, and corrected code example.
+  - Implemented `diag(code, line, col)`, `diag_stage(stage, code, line, col)`, `diag_arg(code, line, col, arg)`, and `diag_stage_arg(stage, code, line, col, arg)` helper procedures in `src/common/diagnostics.vl`. Added error code normalization, default message mapping, and detailed explanations (`error_code_explain`).
+  - Added CLI subcommand `velo explain <code-or-id>` (also `--explain`) in `src/main.vl` and `src/cli_cmd.vl` to display explanations, bad examples, and good examples directly in the terminal.
+  - Migrated the 20 most common diagnostics across `src/analysis/` (`type_checker.vl`, `call_checks.vl`, `array_checks.vl`, `math_checks.vl`, `literal_check.vl`, `tuple_checks.vl`, `range_checks.vl`, `shelf_lit_checks.vl`, `shelf_calls.vl`, `map_checks.vl`, `misc_checks.vl`) to use `VELO-E0001`..`VELO-E0020`.
+  - Added test suite `tests/test_error_registry.py` verifying registry coverage in `docs/ERRORS.md`, `velo explain` CLI functionality, individual compilation test fixtures triggering every one of the 20 codes, and JSON diagnostics preserving error codes.
+  - Regenerated bootstrap chain and verified determinism between Gen2 and Gen3 and synchronized `bootstrap.c`.
+- *Residual Limitation:*
+  Codes `VELO-E0001` through `VELO-E0020` cover the top 20 semantic analysis errors; subsequent compiler diagnostics (parser errors, module resolution, backend code generation) can incrementally adopt `VELO-E####` codes following this established pattern.
+- *Verification:*
+  - `python -m pytest tests/test_error_registry.py tests/test_diagnostics_pretty.py -v`: 45 passed in 2.65s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 33.02s.
+  - `bin/velo.exe explain VELO-E0001` and `bin/velo.exe explain E0020`: verified CLI output formatting.
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (<= 400 ceiling).
 
 **79.2** Remove the internal-fallback diagnostics: any `reached codegen` /
 `backend:` message means an earlier check missed a case. Convert each into a

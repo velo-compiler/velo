@@ -35,6 +35,13 @@ act map_fail(st: @SymbolTable, node: @ExprNode, line: i32, col: i32, msg: string
     return "unknown"
 }
 
+act map_fail_code(st: @SymbolTable, node: @ExprNode, line: i32, col: i32, code: string) -> string {
+    diag(code, line, col)
+    st.error_count += 1
+    if node != null { node.type_name = "unknown"; node.bool_val = true }
+    return "unknown"
+}
+
 // Mut doctrine: put / index-write require a mut root binding.
 act check_map_mut_binding(st: @SymbolTable, receiver: @ExprNode, verb: string, word: string) {
     if receiver == null { return }
@@ -67,7 +74,7 @@ act map_literal_kv(st: @SymbolTable, expr: @ExprNode) -> string {
     if not is_map_key_family(k0) { return map_fail(st, expr, expr.first_arg.line, expr.first_arg.col, map_key_family_error_text(k0)) }
     let v0 = infer_expr_type(st, expr.first_arg.next)
     if v0 == "unknown" { return map_fail(st, expr, expr.line, expr.col, null) }
-    if v0 == "@void" { return map_fail(st, expr, expr.first_arg.next.line, expr.first_arg.next.col, "map values cannot be null (use a @T pointer value)") }
+    if v0 == "@void" { return map_fail_code(st, expr, expr.first_arg.next.line, expr.first_arg.next.col, "VELO-E0017") }
     mut cur = expr.first_arg.next.next; mut expect_key = true
     loop cur != null {
         if expect_key {
@@ -83,7 +90,7 @@ act map_literal_kv(st: @SymbolTable, expr: @ExprNode) -> string {
         if not expect_key {
             let t = infer_expr_type(st, cur)
             if t == "unknown" { return map_fail(st, expr, cur.line, cur.col, null) }
-            if t == "@void" { return map_fail(st, expr, cur.line, cur.col, "map values cannot be null (use a @T pointer value)") }
+            if t == "@void" { return map_fail_code(st, expr, cur.line, cur.col, "VELO-E0017") }
             if t != v0 { is_mixed = true; if str.len(second) == 0 { second = t } }
             if is_dyn_int_family(t) or is_dyn_float_family(t) { if is_dyn_float_family(t) { has_float = true } } else { all_numeric = false }
         }
@@ -139,8 +146,8 @@ act check_map_value_slot(st: @SymbolTable, val_node: @ExprNode, v_t: string) {
     let got = infer_expr_type(st, val_node)
     if v_t == "dyn" {
         if got == "unknown" or got == "dyn" { return }
-        if got == "void" { report_error("semantic", val_node.line, val_node.col, "shelf[dyn] put: cannot box a void value"); st.error_count += 1; return }
-        if got == "@void" { report_error("semantic", val_node.line, val_node.col, "map values cannot be null (use a @T pointer value)"); st.error_count += 1; return }
+        if got == "void" { diag("VELO-E0016", val_node.line, val_node.col); st.error_count += 1; return }
+        if got == "@void" { diag("VELO-E0017", val_node.line, val_node.col); st.error_count += 1; return }
         let err = dyn_boxable_error(got)
         if err != null { report_error("semantic", val_node.line, val_node.col, err); st.error_count += 1 }
         return

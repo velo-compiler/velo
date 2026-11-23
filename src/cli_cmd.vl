@@ -24,6 +24,7 @@ act print_usage() {
     println_str("  velo pkg build [path] [-o <bin>]   Build project defined by velo.pkg")
     println_str("  velo pkg run [path] [-- args...]   Build and run project defined by velo.pkg")
     println_str("  velo fmt [path] [--check]          Format Velo source files canonically")
+    println_str("  velo explain <code-or-id>          Explain compiler diagnostic code")
     println_str("  velo lsp                           Start Velo Language Server (LSP stdio)")
     println_str("  velo version                       Display compiler version")
     println_str("  velo help                          Display this help manual")

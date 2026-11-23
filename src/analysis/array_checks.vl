@@ -21,7 +21,7 @@ act infer_array_lit(st: @SymbolTable, expr: @ExprNode) -> string {
         try_adapt_int_literal(st, elem_t, cur, cur.line, cur.col)
         let cur_t = infer_expr_type(st, cur)
         if not types_are_compatible(elem_t, cur_t) {
-            report_error("semantic", cur.line, cur.col, "Mismatched element type in array literal")
+            diag("VELO-E0010", cur.line, cur.col)
             st.error_count += 1
             return "unknown"
         }
@@ -51,7 +51,7 @@ act is_proven_in_bounds_const(expr: @ExprNode, arr_len: i64) -> bool {
 act check_array_index(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> string {
     let idx_t = infer_expr_type(st, expr.index)
     if not is_int_type(idx_t) {
-        report_error("semantic", expr.line, expr.col, "Array index must be an integer")
+        diag("VELO-E0004", expr.line, expr.col)
         st.error_count += 1
         return "unknown"
     }
@@ -59,12 +59,12 @@ act check_array_index(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> 
     mut const_idx: i64 = 0
     if eval_const_int_expr(expr.index, @const_idx) {
         if const_idx < 0i64 or const_idx >= arr_len {
-            report_error("semantic", expr.line, expr.col, "Array index out of bounds")
+            diag("VELO-E0003", expr.line, expr.col)
             st.error_count += 1
             return "unknown"
         }
     } else if expr.index.kind == EXPR_UNARY and expr.index.op == TOK_MINUS and expr.index.operand != null and expr.index.operand.kind == EXPR_INT {
-        report_error("semantic", expr.line, expr.col, "Array index out of bounds")
+        diag("VELO-E0003", expr.line, expr.col)
         st.error_count += 1
         return "unknown"
     }

@@ -58,7 +58,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_VARIANT {
         if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name }
         let k_sym = find_kind_by_variant(st, expr.member_name); if k_sym != null { check_kind_privacy(st, k_sym, k_sym.name, expr.line, expr.col); expr.type_name = k_sym.name; return k_sym.name }
-        report_error("semantic", expr.line, expr.col, "Cannot infer kind type for variant"); st.error_count += 1
+        diag("VELO-E0011", expr.line, expr.col); st.error_count += 1
         return "unknown"
     }
 
@@ -82,7 +82,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             if is_known_type(st, ren_name) { check_type_privacy(st, ren_name, expr.line, expr.col); return ren_name }
             if expr.str_val == "assert" { return "act(bool, string) -> void" }
             if expr.str_val == "io" or expr.str_val == "mem" or expr.str_val == "fs" or expr.str_val == "str" or expr.str_val == "sys" or expr.str_val == "thread" or expr.str_val == "math" or expr.str_val == "time" or expr.str_val == "os" or expr.str_val == "simd" or expr.str_val == "shelf" or expr.str_val == "map" { return expr.str_val }
-            report_error("semantic", expr.line, expr.col, "Undeclared identifier"); st.error_count += 1
+            diag("VELO-E0001", expr.line, expr.col); st.error_count += 1
             return "unknown"
         }
         check_global_privacy(st, sym, expr.str_val, expr.line, expr.col)
@@ -134,7 +134,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         let f_sym = find_struct_field(st_sym, expr.member_name)
         if f_sym == null { report_error("semantic", expr.line, expr.col, "Struct does not have member field"); st.error_count += 1; return "unknown" }
         if str.len(target_type) > 0 and target_type[0] == '@' and st.strict_safety and st.current_unsafe_depth <= 0 {
-            report_error("semantic", expr.line, expr.col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
+            diag("VELO-E0020", expr.line, expr.col); st.error_count += 1
         }
         return f_sym.type_name
     }
@@ -149,7 +149,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if target_type == "string" { return "u8" }
         if str.len(target_type) > 0 and target_type[0] == '@' {
             if st.strict_safety and st.current_unsafe_depth <= 0 {
-                report_error("semantic", expr.line, expr.col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
+                diag("VELO-E0020", expr.line, expr.col); st.error_count += 1
             }
             return strip_pointer_prefix(target_type)
         }
@@ -160,7 +160,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         let sub_type = infer_expr_type(st, expr.operand)
         if str.len(sub_type) > 0 and sub_type[0] == '@' {
             if st.strict_safety and st.current_unsafe_depth <= 0 {
-                report_error("semantic", expr.line, expr.col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
+                diag("VELO-E0020", expr.line, expr.col); st.error_count += 1
             }
             return strip_pointer_prefix(sub_type)
         }
@@ -250,7 +250,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 if fn_sym.is_extern and st.strict_safety and st.current_unsafe_depth <= 0 {
                     report_error("semantic", expr.line, expr.col, "Call to foreign 'extern act' requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
                 }
-                if expr.arg_count != fn_sym.param_count { report_error("semantic", expr.line, expr.col, "Mismatched argument count in function call"); st.error_count += 1 }
+                if expr.arg_count != fn_sym.param_count { diag("VELO-E0002", expr.line, expr.col); st.error_count += 1 }
                 adapt_and_check_call_args(st, expr, fn_sym.first_param)
                 check_shelf_call_args(st, expr, fn_sym)  // 5.2: shelf elems must string-match
                 check_map_call_args(st, expr, fn_sym)    // 5.2 slice 6: maps match BOTH slots

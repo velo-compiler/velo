@@ -20,7 +20,7 @@ act check_coll9_literal_elem(st: @SymbolTable, expr: @ExprNode) -> string {
             expr.bool_val = true
             return expr.type_name  // element type pinned by the annotation
         }
-        report_error("semantic", expr.line, expr.col, "cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])"); st.error_count += 1
+        diag("VELO-E0019", expr.line, expr.col); st.error_count += 1
         expr.type_name = "unknown"; expr.bool_val = true
         return "unknown"
     }

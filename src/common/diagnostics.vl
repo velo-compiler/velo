@@ -112,6 +112,109 @@ act report_simple_error(message: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Error Code Registry (VELO-E####) and diagnostic emission helpers.
+// ---------------------------------------------------------------------------
+
+// Resolves human-readable summary for a registered error code.
+act error_code_message(code: string) -> string {
+    if code == "VELO-E0001" { return "Undeclared identifier" }
+    if code == "VELO-E0002" { return "Mismatched argument count in function call" }
+    if code == "VELO-E0003" { return "Array index out of bounds" }
+    if code == "VELO-E0004" { return "Array index must be an integer" }
+    if code == "VELO-E0005" { return "Division by zero" }
+    if code == "VELO-E0006" { return "Modulo by zero" }
+    if code == "VELO-E0007" { return "Instantiating unknown struct type" }
+    if code == "VELO-E0008" { return "Unknown field in struct literal" }
+    if code == "VELO-E0009" { return "Struct literal is missing field with no default" }
+    if code == "VELO-E0010" { return "Mismatched element type in array literal" }
+    if code == "VELO-E0011" { return "Cannot infer kind type for variant" }
+    if code == "VELO-E0012" { return "Mismatched argument count in variant constructor" }
+    if code == "VELO-E0013" { return "Tuple index out of bounds" }
+    if code == "VELO-E0014" { return "Range loop step must be greater than zero" }
+    if code == "VELO-E0015" { return "shelf elements cannot be null (use a @T pointer element)" }
+    if code == "VELO-E0016" { return "shelf[dyn] put: cannot box a void value" }
+    if code == "VELO-E0017" { return "map values cannot be null (use a @T pointer value)" }
+    if code == "VELO-E0018" { return "cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])" }
+    if code == "VELO-E0019" { return "cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])" }
+    if code == "VELO-E0020" { return "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety." }
+    return "Unknown compiler diagnostic"
+}
+
+// Normalizes error codes like "E0001" or "0001" into canonical "VELO-E0001".
+act normalize_error_code(raw: string) -> string {
+    if raw == null { return "" }
+    let n = str.len(raw)
+    if n == 10 and raw[0] == 'V' and raw[1] == 'E' and raw[2] == 'L' and raw[3] == 'O' {
+        return raw
+    }
+    if n == 5 and (raw[0] == 'E' or raw[0] == 'e') {
+        mut sb = create_sb(16)
+        sb_append_str(@sb, "VELO-")
+        sb_append_char(@sb, 'E')
+        mut i: usize = 1
+        loop i < n {
+            sb_append_char(@sb, raw[i])
+            i += 1
+        }
+        return sb_to_string(@sb)
+    }
+    if n == 4 {
+        mut sb = create_sb(16)
+        sb_append_str(@sb, "VELO-E")
+        sb_append_str(@sb, raw)
+        return sb_to_string(@sb)
+    }
+    return raw
+}
+
+// Returns detailed explanation for `velo explain <CODE>`.
+act error_code_explain(code: string) -> string {
+    let norm = normalize_error_code(code)
+    if norm == "VELO-E0001" { return "VELO-E0001: Undeclared identifier\nAn identifier was referenced in an expression, but no symbol with that name exists in the current scope." }
+    if norm == "VELO-E0002" { return "VELO-E0002: Mismatched argument count in function call\nA function or method call passed a different number of arguments than expected by its signature." }
+    if norm == "VELO-E0003" { return "VELO-E0003: Array index out of bounds\nA fixed-size array was accessed with a constant index >= array length, or negative." }
+    if norm == "VELO-E0004" { return "VELO-E0004: Array index must be an integer\nAn array subscript expression was provided with a non-integer index type." }
+    if norm == "VELO-E0005" { return "VELO-E0005: Division by zero\nA division expression has a constant zero divisor." }
+    if norm == "VELO-E0006" { return "VELO-E0006: Modulo by zero\nA modulo expression has a constant zero divisor." }
+    if norm == "VELO-E0007" { return "VELO-E0007: Instantiating unknown struct type\nA struct literal refers to a struct type that has not been defined." }
+    if norm == "VELO-E0008" { return "VELO-E0008: Unknown field in struct literal\nA struct literal specifies a field name not present in the struct definition." }
+    if norm == "VELO-E0009" { return "VELO-E0009: Struct literal is missing field with no default\nA struct literal omitted a required field without a default value." }
+    if norm == "VELO-E0010" { return "VELO-E0010: Mismatched element type in array literal\nElements of an array literal evaluate to incompatible types without an explicit annotation." }
+    if norm == "VELO-E0011" { return "VELO-E0011: Cannot infer kind type for variant\nA bare variant literal cannot be resolved to an unambiguous kind type." }
+    if norm == "VELO-E0012" { return "VELO-E0012: Mismatched argument count in variant constructor\nA variant constructor was called with an incorrect number of arguments." }
+    if norm == "VELO-E0013" { return "VELO-E0013: Tuple index out of bounds\nA tuple index exceeds the number of elements in the tuple." }
+    if norm == "VELO-E0014" { return "VELO-E0014: Range loop step must be greater than zero\nA range loop step was zero or negative." }
+    if norm == "VELO-E0015" { return "VELO-E0015: shelf elements cannot be null (use a @T pointer element)\nA shelf literal cannot store bare untyped null." }
+    if norm == "VELO-E0016" { return "VELO-E0016: shelf[dyn] put: cannot box a void value\nCannot box an expression that evaluates to void." }
+    if norm == "VELO-E0017" { return "VELO-E0017: map values cannot be null (use a @T pointer value)\nA map literal cannot store bare untyped null values." }
+    if norm == "VELO-E0018" { return "VELO-E0018: cannot infer element type of empty shelf literal — annotate it\nAn empty shelf literal requires a type annotation." }
+    if norm == "VELO-E0019" { return "VELO-E0019: cannot infer element type of empty ring literal — annotate it\nAn empty ring literal requires a type annotation." }
+    if norm == "VELO-E0020" { return "VELO-E0020: Raw pointer dereference requires an 'unsafe { ... }' block\nWith --strict-safety, raw pointer dereferences must be enclosed in unsafe blocks." }
+    return "Unknown error code. See docs/ERRORS.md for the full error registry."
+}
+
+// Emits a registered diagnostic error at the given source position (stage defaults to 'semantic').
+act diag(code: string, line: i32, col: i32) {
+    diag_stage("semantic", code, line, col)
+}
+
+// Emits a registered diagnostic error at the given stage and position.
+act diag_stage(stage: string, code: string, line: i32, col: i32) {
+    let msg = error_code_message(code)
+    report_error(stage, line, col, "[{code}] {msg}")
+}
+
+// Emits a registered diagnostic error with custom explanatory argument.
+act diag_arg(code: string, line: i32, col: i32, arg: string) {
+    diag_stage_arg("semantic", code, line, col, arg)
+}
+
+act diag_stage_arg(stage: string, code: string, line: i32, col: i32, arg: string) {
+    let msg = error_code_message(code)
+    report_error(stage, line, col, "[{code}] {msg}: {arg}")
+}
+
+// ---------------------------------------------------------------------------
 // 6.3 S1: the source-snippet block renderer. A block is ADDITIVE output
 // printed right after a positioned one-liner wire row (whose bytes never
 // change). Byte spec:

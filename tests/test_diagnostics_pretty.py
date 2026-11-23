@@ -86,7 +86,7 @@ act main() -> i32 {
 }
 """
 
-MULTI_FILE_SUB = """act helper() -> i32 {
+MULTI_FILE_SUB = """view act helper() -> i32 {
     return 42
 }
 """
@@ -265,11 +265,11 @@ def test_semantic_row_plus_block_native(tmp_path):
     result = _run_native(["check", path])
     assert result.returncode == 1
     err = result.stdout + result.stderr
-    assert f"[Velo Error] semantic:4:13 - Undeclared identifier" in err
-    header_pos = err.index(f"{path}:4:13: error: Undeclared identifier")
+    assert f"[Velo Error] semantic:4:13 - [VELO-E0001] Undeclared identifier" in err
+    header_pos = err.index(f"{path}:4:13: error: [VELO-E0001] Undeclared identifier")
     gutter_pos = err.index("4 |     let x = foo + 10")
     caret_pos = err.index("  |             ^")
-    row_pos = err.index("[Velo Error] semantic:4:13 - Undeclared identifier")
+    row_pos = err.index("[Velo Error] semantic:4:13 - [VELO-E0001] Undeclared identifier")
     assert row_pos < header_pos < gutter_pos < caret_pos
     assert "[Velo Error] Semantic analysis failed with 1 errors." in err
     assert "error: Semantic analysis failed" not in err
@@ -280,8 +280,8 @@ def test_semantic_multi_row_blocks_native(tmp_path):
     result = _run_native(["check", path])
     assert result.returncode == 1
     err = result.stdout + result.stderr
-    assert "[Velo Error] semantic:4:13 - Undeclared identifier" in err
-    assert f"{path}:4:13: error: Undeclared identifier" in err
+    assert "[Velo Error] semantic:4:13 - [VELO-E0001] Undeclared identifier" in err
+    assert f"{path}:4:13: error: [VELO-E0001] Undeclared identifier" in err
     assert "4 |     let x = foo + 10" in err
     assert "  |             ^" in err
     assert "[Velo Error] semantic:5:5 - Return type mismatch" in err
@@ -297,7 +297,7 @@ def test_semantic_multi_file_block_less_native(tmp_path):
     result = _run_native(["check", path])
     assert result.returncode == 1
     err = result.stdout + result.stderr
-    assert "[Velo Error] semantic:5:13 - Undeclared identifier" in err
+    assert "[Velo Error] semantic:5:13 - [VELO-E0001] Undeclared identifier" in err
     assert f"{path}:5:13: error: Undeclared identifier" not in err
     assert "5 |     let x = foo + 10" not in err
     assert "[Velo Error] Semantic analysis failed with 1 errors." in err

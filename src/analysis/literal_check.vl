@@ -283,7 +283,7 @@ act check_struct_literal(st: @SymbolTable, expr: @ExprNode) -> string {
     let resolved_name = resolve_import_rename(st, st.current_file, expr.type_name)
     let st_sym = find_struct(st, resolved_name)
     if st_sym == null {
-        report_error("semantic", expr.line, expr.col, "Instantiating unknown struct type")
+        diag("VELO-E0007", expr.line, expr.col)
         st.error_count += 1
         return "unknown"
     }
@@ -292,7 +292,7 @@ act check_struct_literal(st: @SymbolTable, expr: @ExprNode) -> string {
     loop cur_init != null {
         let f_sym = find_struct_field(st_sym, cur_init.name)
         if f_sym == null {
-            report_error("semantic", cur_init.line, cur_init.col, "Unknown field in struct literal")
+            diag("VELO-E0008", cur_init.line, cur_init.col)
             st.error_count += 1
         } else {
             let adapt_ok = try_adapt_int_literal(st, f_sym.type_name, cur_init.value, cur_init.line, cur_init.col)
@@ -322,7 +322,7 @@ act check_struct_literal(st: @SymbolTable, expr: @ExprNode) -> string {
             seen_init = seen_init.next
         }
         if not covered and not sf.has_default {
-            report_error("semantic", expr.line, expr.col, "Struct literal is missing field with no default")
+            diag("VELO-E0009", expr.line, expr.col)
             st.error_count += 1
         }
         sf = sf.next

@@ -69,12 +69,12 @@ act check_tuple_member_access(st: @SymbolTable, expr: @ExprNode, clean_type: str
     let elem_cnt = tuple_elem_count(clean_type)
     if idx >= elem_cnt {
         mut msg = create_sb(64)
-        sb_append_str(@msg, "Tuple index out of bounds: requested index ")
+        sb_append_str(@msg, "requested index ")
         sb_append_str(@msg, mname)
         sb_append_str(@msg, " on tuple with ")
         sb_append_int(@msg, elem_cnt as i32)
         sb_append_str(@msg, " elements")
-        report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+        diag_arg("VELO-E0013", expr.line, expr.col, sb_to_string(@msg))
         st.error_count += 1
         return "unknown"
     }

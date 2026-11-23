@@ -17,7 +17,7 @@ act shelf_literal_elem(st: @SymbolTable, expr: @ExprNode) -> string {
             expr.bool_val = true
             return expr.type_name  // element type pinned by the annotation
         }
-        report_error("semantic", expr.line, expr.col, "cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])"); st.error_count += 1
+        diag("VELO-E0018", expr.line, expr.col); st.error_count += 1
         expr.type_name = "unknown"; expr.bool_val = true
         return "unknown"
     }
@@ -27,7 +27,7 @@ act shelf_literal_elem(st: @SymbolTable, expr: @ExprNode) -> string {
         return "unknown"  // the element inference already reported
     }
     if elem == "@void" {
-        report_error("semantic", expr.first_arg.line, expr.first_arg.col, "shelf elements cannot be null (use a @T pointer element)"); st.error_count += 1
+        diag("VELO-E0015", expr.first_arg.line, expr.first_arg.col); st.error_count += 1
         expr.type_name = "unknown"; expr.bool_val = true
         return "unknown"
     }
@@ -48,7 +48,7 @@ act shelf_literal_elem(st: @SymbolTable, expr: @ExprNode) -> string {
     loop cur != null {
         let t = infer_expr_type(st, cur)
         if t == "@void" {
-            report_error("semantic", cur.line, cur.col, "shelf elements cannot be null (use a @T pointer element)"); st.error_count += 1
+            diag("VELO-E0015", cur.line, cur.col); st.error_count += 1
             expr.type_name = "unknown"; expr.bool_val = true
             return "unknown"
         }

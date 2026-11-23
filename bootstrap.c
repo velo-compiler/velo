@@ -1254,7 +1254,7 @@ InMemDiag* g_diag_head = NULL;
 InMemDiag* g_diag_tail = NULL;
 #line 19 "src/main.vl"
 int32_t g_diag_count = 0;
-#line 193 "src/main.vl"
+#line 296 "src/main.vl"
 bool g_pretty_color = false;
 #line 8 "src/main.vl"
 int32_t TYPE_KIND_PRIMITIVE = 1;
@@ -1844,6 +1844,13 @@ void diag_collector_add(const char* filename, int32_t line, int32_t col, int32_t
 void report_error(const char* filename, int32_t line, int32_t col, const char* message);
 void report_warning(const char* filename, int32_t line, int32_t col, const char* message);
 void report_simple_error(const char* message);
+const char* error_code_message(const char* code);
+const char* normalize_error_code(const char* raw);
+const char* error_code_explain(const char* code);
+void diag(const char* code, int32_t line, int32_t col);
+void diag_stage(const char* stage, const char* code, int32_t line, int32_t col);
+void diag_arg(const char* code, int32_t line, int32_t col, const char* arg);
+void diag_stage_arg(const char* stage, const char* code, int32_t line, int32_t col, const char* arg);
 const char* pretty_line_text(const char* source, int32_t want_line);
 size_t pretty_digit_count(int32_t n);
 void pretty_pad_spaces(StringBuilder* sb, size_t count);
@@ -2142,6 +2149,7 @@ bool is_map_key_family(const char* name);
 const char* map_key_family_error_text(const char* key);
 const char* map_checked_key(SymbolTable* st, const char* key, int32_t line, int32_t col);
 const char* map_fail(SymbolTable* st, ExprNode* node, int32_t line, int32_t col, const char* msg);
+const char* map_fail_code(SymbolTable* st, ExprNode* node, int32_t line, int32_t col, const char* code);
 void check_map_mut_binding(SymbolTable* st, ExprNode* receiver, const char* verb, const char* word);
 const char* map_literal_kv(SymbolTable* st, ExprNode* expr);
 const char* map_inferred_type(SymbolTable* st, ExprNode* expr);
@@ -11821,203 +11829,496 @@ void report_simple_error(const char* message) {
     println_str(velo_str_format("[Velo Error] %s", (const char*)(message)));
 }
 
+#line 119 "src/main.vl"
+const char* error_code_message(const char* code) {
+#line 120 "src/main.vl"
+    if (((code != NULL && "VELO-E0001" != NULL) ? (strcmp(code, "VELO-E0001") == 0) : (code == "VELO-E0001"))) {
+#line 120 "src/main.vl"
+        return "Undeclared identifier";
+    }
+#line 121 "src/main.vl"
+    if (((code != NULL && "VELO-E0002" != NULL) ? (strcmp(code, "VELO-E0002") == 0) : (code == "VELO-E0002"))) {
+#line 121 "src/main.vl"
+        return "Mismatched argument count in function call";
+    }
+#line 122 "src/main.vl"
+    if (((code != NULL && "VELO-E0003" != NULL) ? (strcmp(code, "VELO-E0003") == 0) : (code == "VELO-E0003"))) {
+#line 122 "src/main.vl"
+        return "Array index out of bounds";
+    }
+#line 123 "src/main.vl"
+    if (((code != NULL && "VELO-E0004" != NULL) ? (strcmp(code, "VELO-E0004") == 0) : (code == "VELO-E0004"))) {
+#line 123 "src/main.vl"
+        return "Array index must be an integer";
+    }
+#line 124 "src/main.vl"
+    if (((code != NULL && "VELO-E0005" != NULL) ? (strcmp(code, "VELO-E0005") == 0) : (code == "VELO-E0005"))) {
+#line 124 "src/main.vl"
+        return "Division by zero";
+    }
+#line 125 "src/main.vl"
+    if (((code != NULL && "VELO-E0006" != NULL) ? (strcmp(code, "VELO-E0006") == 0) : (code == "VELO-E0006"))) {
+#line 125 "src/main.vl"
+        return "Modulo by zero";
+    }
+#line 126 "src/main.vl"
+    if (((code != NULL && "VELO-E0007" != NULL) ? (strcmp(code, "VELO-E0007") == 0) : (code == "VELO-E0007"))) {
+#line 126 "src/main.vl"
+        return "Instantiating unknown struct type";
+    }
+#line 127 "src/main.vl"
+    if (((code != NULL && "VELO-E0008" != NULL) ? (strcmp(code, "VELO-E0008") == 0) : (code == "VELO-E0008"))) {
+#line 127 "src/main.vl"
+        return "Unknown field in struct literal";
+    }
+#line 128 "src/main.vl"
+    if (((code != NULL && "VELO-E0009" != NULL) ? (strcmp(code, "VELO-E0009") == 0) : (code == "VELO-E0009"))) {
+#line 128 "src/main.vl"
+        return "Struct literal is missing field with no default";
+    }
 #line 129 "src/main.vl"
-const char* pretty_line_text(const char* source, int32_t want_line) {
+    if (((code != NULL && "VELO-E0010" != NULL) ? (strcmp(code, "VELO-E0010") == 0) : (code == "VELO-E0010"))) {
+#line 129 "src/main.vl"
+        return "Mismatched element type in array literal";
+    }
 #line 130 "src/main.vl"
-    size_t n = ((usize)strlen(source));
+    if (((code != NULL && "VELO-E0011" != NULL) ? (strcmp(code, "VELO-E0011") == 0) : (code == "VELO-E0011"))) {
+#line 130 "src/main.vl"
+        return "Cannot infer kind type for variant";
+    }
+#line 131 "src/main.vl"
+    if (((code != NULL && "VELO-E0012" != NULL) ? (strcmp(code, "VELO-E0012") == 0) : (code == "VELO-E0012"))) {
+#line 131 "src/main.vl"
+        return "Mismatched argument count in variant constructor";
+    }
 #line 132 "src/main.vl"
-    size_t start = 0;
+    if (((code != NULL && "VELO-E0013" != NULL) ? (strcmp(code, "VELO-E0013") == 0) : (code == "VELO-E0013"))) {
+#line 132 "src/main.vl"
+        return "Tuple index out of bounds";
+    }
 #line 133 "src/main.vl"
-    int32_t line_no = 1;
+    if (((code != NULL && "VELO-E0014" != NULL) ? (strcmp(code, "VELO-E0014") == 0) : (code == "VELO-E0014"))) {
+#line 133 "src/main.vl"
+        return "Range loop step must be greater than zero";
+    }
 #line 134 "src/main.vl"
-    for (int32_t it = 0; (((line_no < want_line) && (start < n))); it++) {
+    if (((code != NULL && "VELO-E0015" != NULL) ? (strcmp(code, "VELO-E0015") == 0) : (code == "VELO-E0015"))) {
+#line 134 "src/main.vl"
+        return "shelf elements cannot be null (use a @T pointer element)";
+    }
 #line 135 "src/main.vl"
-        if (velo_cmp_eq_u_s(source[start], '\n')) {
+    if (((code != NULL && "VELO-E0016" != NULL) ? (strcmp(code, "VELO-E0016") == 0) : (code == "VELO-E0016"))) {
+#line 135 "src/main.vl"
+        return "shelf[dyn] put: cannot box a void value";
+    }
 #line 136 "src/main.vl"
+    if (((code != NULL && "VELO-E0017" != NULL) ? (strcmp(code, "VELO-E0017") == 0) : (code == "VELO-E0017"))) {
+#line 136 "src/main.vl"
+        return "map values cannot be null (use a @T pointer value)";
+    }
+#line 137 "src/main.vl"
+    if (((code != NULL && "VELO-E0018" != NULL) ? (strcmp(code, "VELO-E0018") == 0) : (code == "VELO-E0018"))) {
+#line 137 "src/main.vl"
+        return "cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])";
+    }
+#line 138 "src/main.vl"
+    if (((code != NULL && "VELO-E0019" != NULL) ? (strcmp(code, "VELO-E0019") == 0) : (code == "VELO-E0019"))) {
+#line 138 "src/main.vl"
+        return "cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])";
+    }
+#line 139 "src/main.vl"
+    if (((code != NULL && "VELO-E0020" != NULL) ? (strcmp(code, "VELO-E0020") == 0) : (code == "VELO-E0020"))) {
+#line 139 "src/main.vl"
+        return "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety.";
+    }
+#line 140 "src/main.vl"
+    return "Unknown compiler diagnostic";
+}
+
+#line 144 "src/main.vl"
+const char* normalize_error_code(const char* raw) {
+#line 145 "src/main.vl"
+    if ((raw == NULL)) {
+#line 145 "src/main.vl"
+        return "";
+    }
+#line 146 "src/main.vl"
+    size_t n = ((usize)strlen(raw));
+#line 147 "src/main.vl"
+    if (((((velo_cmp_eq_u_s(n, 10) && velo_cmp_eq_u_s(raw[0], 'V')) && velo_cmp_eq_u_s(raw[1], 'E')) && velo_cmp_eq_u_s(raw[2], 'L')) && velo_cmp_eq_u_s(raw[3], 'O'))) {
+#line 148 "src/main.vl"
+        return raw;
+    }
+#line 150 "src/main.vl"
+    if ((velo_cmp_eq_u_s(n, 5) && (velo_cmp_eq_u_s(raw[0], 'E') || velo_cmp_eq_u_s(raw[0], 'e')))) {
+#line 151 "src/main.vl"
+        StringBuilder sb = create_sb(16);
+#line 152 "src/main.vl"
+        sb_append_str((&(sb)), "VELO-");
+#line 153 "src/main.vl"
+        sb_append_char((&(sb)), 'E');
+#line 154 "src/main.vl"
+        size_t i = 1;
+#line 155 "src/main.vl"
+        for (int32_t it = 0; ((i < n)); it++) {
+#line 156 "src/main.vl"
+            sb_append_char((&(sb)), raw[i]);
+#line 157 "src/main.vl"
+            i += 1;
+            __loop_cont_100: __attribute__((unused));
+        }
+        __loop_break_100: __attribute__((unused));
+#line 159 "src/main.vl"
+        return sb_to_string((&(sb)));
+    }
+#line 161 "src/main.vl"
+    if (velo_cmp_eq_u_s(n, 4)) {
+#line 162 "src/main.vl"
+        StringBuilder sb = create_sb(16);
+#line 163 "src/main.vl"
+        sb_append_str((&(sb)), "VELO-E");
+#line 164 "src/main.vl"
+        sb_append_str((&(sb)), raw);
+#line 165 "src/main.vl"
+        return sb_to_string((&(sb)));
+    }
+#line 167 "src/main.vl"
+    return raw;
+}
+
+#line 171 "src/main.vl"
+const char* error_code_explain(const char* code) {
+#line 172 "src/main.vl"
+    const char* norm = normalize_error_code(code);
+#line 173 "src/main.vl"
+    if (((norm != NULL && "VELO-E0001" != NULL) ? (strcmp(norm, "VELO-E0001") == 0) : (norm == "VELO-E0001"))) {
+#line 173 "src/main.vl"
+        return "VELO-E0001: Undeclared identifier\nAn identifier was referenced in an expression, but no symbol with that name exists in the current scope.";
+    }
+#line 174 "src/main.vl"
+    if (((norm != NULL && "VELO-E0002" != NULL) ? (strcmp(norm, "VELO-E0002") == 0) : (norm == "VELO-E0002"))) {
+#line 174 "src/main.vl"
+        return "VELO-E0002: Mismatched argument count in function call\nA function or method call passed a different number of arguments than expected by its signature.";
+    }
+#line 175 "src/main.vl"
+    if (((norm != NULL && "VELO-E0003" != NULL) ? (strcmp(norm, "VELO-E0003") == 0) : (norm == "VELO-E0003"))) {
+#line 175 "src/main.vl"
+        return "VELO-E0003: Array index out of bounds\nA fixed-size array was accessed with a constant index >= array length, or negative.";
+    }
+#line 176 "src/main.vl"
+    if (((norm != NULL && "VELO-E0004" != NULL) ? (strcmp(norm, "VELO-E0004") == 0) : (norm == "VELO-E0004"))) {
+#line 176 "src/main.vl"
+        return "VELO-E0004: Array index must be an integer\nAn array subscript expression was provided with a non-integer index type.";
+    }
+#line 177 "src/main.vl"
+    if (((norm != NULL && "VELO-E0005" != NULL) ? (strcmp(norm, "VELO-E0005") == 0) : (norm == "VELO-E0005"))) {
+#line 177 "src/main.vl"
+        return "VELO-E0005: Division by zero\nA division expression has a constant zero divisor.";
+    }
+#line 178 "src/main.vl"
+    if (((norm != NULL && "VELO-E0006" != NULL) ? (strcmp(norm, "VELO-E0006") == 0) : (norm == "VELO-E0006"))) {
+#line 178 "src/main.vl"
+        return "VELO-E0006: Modulo by zero\nA modulo expression has a constant zero divisor.";
+    }
+#line 179 "src/main.vl"
+    if (((norm != NULL && "VELO-E0007" != NULL) ? (strcmp(norm, "VELO-E0007") == 0) : (norm == "VELO-E0007"))) {
+#line 179 "src/main.vl"
+        return "VELO-E0007: Instantiating unknown struct type\nA struct literal refers to a struct type that has not been defined.";
+    }
+#line 180 "src/main.vl"
+    if (((norm != NULL && "VELO-E0008" != NULL) ? (strcmp(norm, "VELO-E0008") == 0) : (norm == "VELO-E0008"))) {
+#line 180 "src/main.vl"
+        return "VELO-E0008: Unknown field in struct literal\nA struct literal specifies a field name not present in the struct definition.";
+    }
+#line 181 "src/main.vl"
+    if (((norm != NULL && "VELO-E0009" != NULL) ? (strcmp(norm, "VELO-E0009") == 0) : (norm == "VELO-E0009"))) {
+#line 181 "src/main.vl"
+        return "VELO-E0009: Struct literal is missing field with no default\nA struct literal omitted a required field without a default value.";
+    }
+#line 182 "src/main.vl"
+    if (((norm != NULL && "VELO-E0010" != NULL) ? (strcmp(norm, "VELO-E0010") == 0) : (norm == "VELO-E0010"))) {
+#line 182 "src/main.vl"
+        return "VELO-E0010: Mismatched element type in array literal\nElements of an array literal evaluate to incompatible types without an explicit annotation.";
+    }
+#line 183 "src/main.vl"
+    if (((norm != NULL && "VELO-E0011" != NULL) ? (strcmp(norm, "VELO-E0011") == 0) : (norm == "VELO-E0011"))) {
+#line 183 "src/main.vl"
+        return "VELO-E0011: Cannot infer kind type for variant\nA bare variant literal cannot be resolved to an unambiguous kind type.";
+    }
+#line 184 "src/main.vl"
+    if (((norm != NULL && "VELO-E0012" != NULL) ? (strcmp(norm, "VELO-E0012") == 0) : (norm == "VELO-E0012"))) {
+#line 184 "src/main.vl"
+        return "VELO-E0012: Mismatched argument count in variant constructor\nA variant constructor was called with an incorrect number of arguments.";
+    }
+#line 185 "src/main.vl"
+    if (((norm != NULL && "VELO-E0013" != NULL) ? (strcmp(norm, "VELO-E0013") == 0) : (norm == "VELO-E0013"))) {
+#line 185 "src/main.vl"
+        return "VELO-E0013: Tuple index out of bounds\nA tuple index exceeds the number of elements in the tuple.";
+    }
+#line 186 "src/main.vl"
+    if (((norm != NULL && "VELO-E0014" != NULL) ? (strcmp(norm, "VELO-E0014") == 0) : (norm == "VELO-E0014"))) {
+#line 186 "src/main.vl"
+        return "VELO-E0014: Range loop step must be greater than zero\nA range loop step was zero or negative.";
+    }
+#line 187 "src/main.vl"
+    if (((norm != NULL && "VELO-E0015" != NULL) ? (strcmp(norm, "VELO-E0015") == 0) : (norm == "VELO-E0015"))) {
+#line 187 "src/main.vl"
+        return "VELO-E0015: shelf elements cannot be null (use a @T pointer element)\nA shelf literal cannot store bare untyped null.";
+    }
+#line 188 "src/main.vl"
+    if (((norm != NULL && "VELO-E0016" != NULL) ? (strcmp(norm, "VELO-E0016") == 0) : (norm == "VELO-E0016"))) {
+#line 188 "src/main.vl"
+        return "VELO-E0016: shelf[dyn] put: cannot box a void value\nCannot box an expression that evaluates to void.";
+    }
+#line 189 "src/main.vl"
+    if (((norm != NULL && "VELO-E0017" != NULL) ? (strcmp(norm, "VELO-E0017") == 0) : (norm == "VELO-E0017"))) {
+#line 189 "src/main.vl"
+        return "VELO-E0017: map values cannot be null (use a @T pointer value)\nA map literal cannot store bare untyped null values.";
+    }
+#line 190 "src/main.vl"
+    if (((norm != NULL && "VELO-E0018" != NULL) ? (strcmp(norm, "VELO-E0018") == 0) : (norm == "VELO-E0018"))) {
+#line 190 "src/main.vl"
+        return "VELO-E0018: cannot infer element type of empty shelf literal — annotate it\nAn empty shelf literal requires a type annotation.";
+    }
+#line 191 "src/main.vl"
+    if (((norm != NULL && "VELO-E0019" != NULL) ? (strcmp(norm, "VELO-E0019") == 0) : (norm == "VELO-E0019"))) {
+#line 191 "src/main.vl"
+        return "VELO-E0019: cannot infer element type of empty ring literal — annotate it\nAn empty ring literal requires a type annotation.";
+    }
+#line 192 "src/main.vl"
+    if (((norm != NULL && "VELO-E0020" != NULL) ? (strcmp(norm, "VELO-E0020") == 0) : (norm == "VELO-E0020"))) {
+#line 192 "src/main.vl"
+        return "VELO-E0020: Raw pointer dereference requires an 'unsafe { ... }' block\nWith --strict-safety, raw pointer dereferences must be enclosed in unsafe blocks.";
+    }
+#line 193 "src/main.vl"
+    return "Unknown error code. See docs/ERRORS.md for the full error registry.";
+}
+
+#line 197 "src/main.vl"
+void diag(const char* code, int32_t line, int32_t col) {
+#line 198 "src/main.vl"
+    diag_stage("semantic", code, line, col);
+}
+
+#line 202 "src/main.vl"
+void diag_stage(const char* stage, const char* code, int32_t line, int32_t col) {
+#line 203 "src/main.vl"
+    const char* msg = error_code_message(code);
+#line 204 "src/main.vl"
+    report_error(stage, line, col, velo_str_format("[%s] %s", (const char*)(code), (const char*)(msg)));
+}
+
+#line 208 "src/main.vl"
+void diag_arg(const char* code, int32_t line, int32_t col, const char* arg) {
+#line 209 "src/main.vl"
+    diag_stage_arg("semantic", code, line, col, arg);
+}
+
+#line 212 "src/main.vl"
+void diag_stage_arg(const char* stage, const char* code, int32_t line, int32_t col, const char* arg) {
+#line 213 "src/main.vl"
+    const char* msg = error_code_message(code);
+#line 214 "src/main.vl"
+    report_error(stage, line, col, velo_str_format("[%s] %s: %s", (const char*)(code), (const char*)(msg), (const char*)(arg)));
+}
+
+#line 232 "src/main.vl"
+const char* pretty_line_text(const char* source, int32_t want_line) {
+#line 233 "src/main.vl"
+    size_t n = ((usize)strlen(source));
+#line 235 "src/main.vl"
+    size_t start = 0;
+#line 236 "src/main.vl"
+    int32_t line_no = 1;
+#line 237 "src/main.vl"
+    for (int32_t it = 0; (((line_no < want_line) && (start < n))); it++) {
+#line 238 "src/main.vl"
+        if (velo_cmp_eq_u_s(source[start], '\n')) {
+#line 239 "src/main.vl"
             line_no += 1;
         }
-#line 138 "src/main.vl"
+#line 241 "src/main.vl"
         start += 1;
-        __loop_cont_100: __attribute__((unused));
-    }
-    __loop_break_100: __attribute__((unused));
-#line 141 "src/main.vl"
-    size_t end = start;
-#line 142 "src/main.vl"
-    for (int32_t it = 0; ((end < n)); it++) {
-#line 143 "src/main.vl"
-        if (velo_cmp_eq_u_s(source[end], '\n')) {
-#line 144 "src/main.vl"
-            goto __loop_break_101;
-        }
-#line 146 "src/main.vl"
-        end += 1;
         __loop_cont_101: __attribute__((unused));
     }
     __loop_break_101: __attribute__((unused));
-#line 148 "src/main.vl"
-    if (((end > start) && velo_cmp_eq_u_s(source[(end - 1)], '\r'))) {
-#line 149 "src/main.vl"
-        end -= 1;
-    }
-#line 152 "src/main.vl"
-    size_t raw_len = (end - start);
-#line 153 "src/main.vl"
-    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((raw_len + 1))));
-#line 154 "src/main.vl"
-    size_t w = 0;
-#line 155 "src/main.vl"
-    size_t k = start;
-#line 156 "src/main.vl"
-    for (int32_t it = 0; ((k < end)); it++) {
-#line 157 "src/main.vl"
-        if (velo_cmp_eq_u_s(source[k], '\t')) {
-#line 158 "src/main.vl"
-            buf[w] = ' ';
-        } else {
-#line 160 "src/main.vl"
-            buf[w] = source[k];
+#line 244 "src/main.vl"
+    size_t end = start;
+#line 245 "src/main.vl"
+    for (int32_t it = 0; ((end < n)); it++) {
+#line 246 "src/main.vl"
+        if (velo_cmp_eq_u_s(source[end], '\n')) {
+#line 247 "src/main.vl"
+            goto __loop_break_102;
         }
-#line 162 "src/main.vl"
-        w += 1;
-#line 163 "src/main.vl"
-        k += 1;
+#line 249 "src/main.vl"
+        end += 1;
         __loop_cont_102: __attribute__((unused));
     }
     __loop_break_102: __attribute__((unused));
-#line 165 "src/main.vl"
-    buf[w] = ((uint8_t)(0));
-#line 166 "src/main.vl"
-    return ((const char*)(buf));
-}
-
-#line 170 "src/main.vl"
-size_t pretty_digit_count(int32_t n) {
-#line 171 "src/main.vl"
-    if ((n <= 0)) {
-#line 172 "src/main.vl"
-        return 1;
+#line 251 "src/main.vl"
+    if (((end > start) && velo_cmp_eq_u_s(source[(end - 1)], '\r'))) {
+#line 252 "src/main.vl"
+        end -= 1;
     }
-#line 174 "src/main.vl"
-    int32_t v = n;
-#line 175 "src/main.vl"
-    size_t c = 1;
-#line 176 "src/main.vl"
-    for (int32_t it = 0; ((v > 9)); it++) {
-#line 177 "src/main.vl"
-        v /= 10;
-#line 178 "src/main.vl"
-        c += 1;
+#line 255 "src/main.vl"
+    size_t raw_len = (end - start);
+#line 256 "src/main.vl"
+    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((raw_len + 1))));
+#line 257 "src/main.vl"
+    size_t w = 0;
+#line 258 "src/main.vl"
+    size_t k = start;
+#line 259 "src/main.vl"
+    for (int32_t it = 0; ((k < end)); it++) {
+#line 260 "src/main.vl"
+        if (velo_cmp_eq_u_s(source[k], '\t')) {
+#line 261 "src/main.vl"
+            buf[w] = ' ';
+        } else {
+#line 263 "src/main.vl"
+            buf[w] = source[k];
+        }
+#line 265 "src/main.vl"
+        w += 1;
+#line 266 "src/main.vl"
+        k += 1;
         __loop_cont_103: __attribute__((unused));
     }
     __loop_break_103: __attribute__((unused));
-#line 180 "src/main.vl"
-    return c;
+#line 268 "src/main.vl"
+    buf[w] = ((uint8_t)(0));
+#line 269 "src/main.vl"
+    return ((const char*)(buf));
 }
 
-#line 184 "src/main.vl"
-void pretty_pad_spaces(StringBuilder* sb, size_t count) {
-#line 185 "src/main.vl"
-    size_t i = 0;
-#line 186 "src/main.vl"
-    for (int32_t it = 0; ((i < count)); it++) {
-#line 187 "src/main.vl"
-        sb_append_char(sb, ' ');
-#line 188 "src/main.vl"
-        i += 1;
+#line 273 "src/main.vl"
+size_t pretty_digit_count(int32_t n) {
+#line 274 "src/main.vl"
+    if ((n <= 0)) {
+#line 275 "src/main.vl"
+        return 1;
+    }
+#line 277 "src/main.vl"
+    int32_t v = n;
+#line 278 "src/main.vl"
+    size_t c = 1;
+#line 279 "src/main.vl"
+    for (int32_t it = 0; ((v > 9)); it++) {
+#line 280 "src/main.vl"
+        v /= 10;
+#line 281 "src/main.vl"
+        c += 1;
         __loop_cont_104: __attribute__((unused));
     }
     __loop_break_104: __attribute__((unused));
+#line 283 "src/main.vl"
+    return c;
 }
 
-#line 195 "src/main.vl"
-void pretty_set_color(bool enabled) {
-#line 196 "src/main.vl"
-    g_pretty_color = enabled;
-}
-
-#line 199 "src/main.vl"
-bool pretty_get_color(void) {
-#line 200 "src/main.vl"
-    return g_pretty_color;
-}
-
-#line 206 "src/main.vl"
-void pretty_render_block(const char* file, int32_t line, int32_t col, size_t length, const char* message, const char* sev, const char* source) {
-#line 207 "src/main.vl"
-    if (g_diag_collector_active) {
-#line 208 "src/main.vl"
-        return;
-    }
-#line 210 "src/main.vl"
-    if (g_pretty_color) {
-#line 211 "src/main.vl"
-        if (((sev != NULL && "error" != NULL) ? (strcmp(sev, "error") == 0) : (sev == "error"))) {
-#line 212 "src/main.vl"
-            println_str(velo_str_format("%s:%lld:%lld: [31merror[0m: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(message)));
-        } else
-#line 213 "src/main.vl"
-        if (((sev != NULL && "warning" != NULL) ? (strcmp(sev, "warning") == 0) : (sev == "warning"))) {
-#line 214 "src/main.vl"
-            println_str(velo_str_format("%s:%lld:%lld: [33mwarning[0m: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(message)));
-        } else {
-#line 216 "src/main.vl"
-            println_str(velo_str_format("%s:%lld:%lld: %s: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(sev), (const char*)(message)));
-        }
-    } else {
-#line 219 "src/main.vl"
-        println_str(velo_str_format("%s:%lld:%lld: %s: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(sev), (const char*)(message)));
-    }
-#line 221 "src/main.vl"
-    const char* src_line = pretty_line_text(source, line);
-#line 222 "src/main.vl"
-    println_str(velo_str_format("%lld | %s", (long long)(line), (const char*)(src_line)));
-#line 223 "src/main.vl"
-    size_t w = pretty_digit_count(line);
-#line 224 "src/main.vl"
-    size_t span_len = 1;
-#line 225 "src/main.vl"
-    if (velo_cmp_gt_u_s(length, 1)) {
-#line 226 "src/main.vl"
-        span_len = length;
-    }
-#line 228 "src/main.vl"
-    StringBuilder pad = create_sb((((w + ((size_t)(col))) + span_len) + 16));
-#line 229 "src/main.vl"
-    pretty_pad_spaces((&(pad)), (w + 1));
-#line 230 "src/main.vl"
-    sb_append_str((&(pad)), "| ");
-#line 231 "src/main.vl"
-    size_t caret_pad = 0;
-#line 232 "src/main.vl"
-    if ((col > 1)) {
-#line 233 "src/main.vl"
-        caret_pad = ((size_t)((col - 1)));
-    }
-#line 235 "src/main.vl"
-    pretty_pad_spaces((&(pad)), caret_pad);
-#line 236 "src/main.vl"
-    if (g_pretty_color) {
-#line 237 "src/main.vl"
-        sb_append_str((&(pad)), "[1m");
-    }
-#line 239 "src/main.vl"
-    size_t s = 0;
-#line 240 "src/main.vl"
-    for (int32_t it = 0; ((s < span_len)); it++) {
-#line 241 "src/main.vl"
-        sb_append_char((&(pad)), '^');
-#line 242 "src/main.vl"
-        s += 1;
+#line 287 "src/main.vl"
+void pretty_pad_spaces(StringBuilder* sb, size_t count) {
+#line 288 "src/main.vl"
+    size_t i = 0;
+#line 289 "src/main.vl"
+    for (int32_t it = 0; ((i < count)); it++) {
+#line 290 "src/main.vl"
+        sb_append_char(sb, ' ');
+#line 291 "src/main.vl"
+        i += 1;
         __loop_cont_105: __attribute__((unused));
     }
     __loop_break_105: __attribute__((unused));
-#line 244 "src/main.vl"
+}
+
+#line 298 "src/main.vl"
+void pretty_set_color(bool enabled) {
+#line 299 "src/main.vl"
+    g_pretty_color = enabled;
+}
+
+#line 302 "src/main.vl"
+bool pretty_get_color(void) {
+#line 303 "src/main.vl"
+    return g_pretty_color;
+}
+
+#line 309 "src/main.vl"
+void pretty_render_block(const char* file, int32_t line, int32_t col, size_t length, const char* message, const char* sev, const char* source) {
+#line 310 "src/main.vl"
+    if (g_diag_collector_active) {
+#line 311 "src/main.vl"
+        return;
+    }
+#line 313 "src/main.vl"
     if (g_pretty_color) {
-#line 245 "src/main.vl"
+#line 314 "src/main.vl"
+        if (((sev != NULL && "error" != NULL) ? (strcmp(sev, "error") == 0) : (sev == "error"))) {
+#line 315 "src/main.vl"
+            println_str(velo_str_format("%s:%lld:%lld: [31merror[0m: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(message)));
+        } else
+#line 316 "src/main.vl"
+        if (((sev != NULL && "warning" != NULL) ? (strcmp(sev, "warning") == 0) : (sev == "warning"))) {
+#line 317 "src/main.vl"
+            println_str(velo_str_format("%s:%lld:%lld: [33mwarning[0m: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(message)));
+        } else {
+#line 319 "src/main.vl"
+            println_str(velo_str_format("%s:%lld:%lld: %s: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(sev), (const char*)(message)));
+        }
+    } else {
+#line 322 "src/main.vl"
+        println_str(velo_str_format("%s:%lld:%lld: %s: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(sev), (const char*)(message)));
+    }
+#line 324 "src/main.vl"
+    const char* src_line = pretty_line_text(source, line);
+#line 325 "src/main.vl"
+    println_str(velo_str_format("%lld | %s", (long long)(line), (const char*)(src_line)));
+#line 326 "src/main.vl"
+    size_t w = pretty_digit_count(line);
+#line 327 "src/main.vl"
+    size_t span_len = 1;
+#line 328 "src/main.vl"
+    if (velo_cmp_gt_u_s(length, 1)) {
+#line 329 "src/main.vl"
+        span_len = length;
+    }
+#line 331 "src/main.vl"
+    StringBuilder pad = create_sb((((w + ((size_t)(col))) + span_len) + 16));
+#line 332 "src/main.vl"
+    pretty_pad_spaces((&(pad)), (w + 1));
+#line 333 "src/main.vl"
+    sb_append_str((&(pad)), "| ");
+#line 334 "src/main.vl"
+    size_t caret_pad = 0;
+#line 335 "src/main.vl"
+    if ((col > 1)) {
+#line 336 "src/main.vl"
+        caret_pad = ((size_t)((col - 1)));
+    }
+#line 338 "src/main.vl"
+    pretty_pad_spaces((&(pad)), caret_pad);
+#line 339 "src/main.vl"
+    if (g_pretty_color) {
+#line 340 "src/main.vl"
+        sb_append_str((&(pad)), "[1m");
+    }
+#line 342 "src/main.vl"
+    size_t s = 0;
+#line 343 "src/main.vl"
+    for (int32_t it = 0; ((s < span_len)); it++) {
+#line 344 "src/main.vl"
+        sb_append_char((&(pad)), '^');
+#line 345 "src/main.vl"
+        s += 1;
+        __loop_cont_106: __attribute__((unused));
+    }
+    __loop_break_106: __attribute__((unused));
+#line 347 "src/main.vl"
+    if (g_pretty_color) {
+#line 348 "src/main.vl"
         sb_append_str((&(pad)), "[0m");
     }
-#line 247 "src/main.vl"
+#line 350 "src/main.vl"
     println_str(sb_to_string((&(pad))));
 }
 
@@ -12092,9 +12393,9 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
                 lex->pos += 1;
 #line 21 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_106: __attribute__((unused));
+                __loop_cont_107: __attribute__((unused));
             }
-            __loop_break_106: __attribute__((unused));
+            __loop_break_107: __attribute__((unused));
         } else
 #line 23 "src/main.vl"
         if ((velo_cmp_eq_u_s(base_char, 'b') || velo_cmp_eq_u_s(base_char, 'B'))) {
@@ -12104,9 +12405,9 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
                 lex->pos += 1;
 #line 26 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_107: __attribute__((unused));
+                __loop_cont_108: __attribute__((unused));
             }
-            __loop_break_107: __attribute__((unused));
+            __loop_break_108: __attribute__((unused));
         } else {
 #line 29 "src/main.vl"
             for (int32_t it = 0; (((lex->pos < len) && ((velo_cmp_ge_u_s(src[lex->pos], '0') && velo_cmp_le_u_s(src[lex->pos], '7')) || velo_cmp_eq_u_s(src[lex->pos], '_')))); it++) {
@@ -12114,9 +12415,9 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
                 lex->pos += 1;
 #line 31 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_108: __attribute__((unused));
+                __loop_cont_109: __attribute__((unused));
             }
-            __loop_break_108: __attribute__((unused));
+            __loop_break_109: __attribute__((unused));
         }
 #line 35 "src/main.vl"
         if (((lex->pos < len) && is_ident_part(src[lex->pos]))) {
@@ -12126,9 +12427,9 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
                 lex->pos += 1;
 #line 38 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_109: __attribute__((unused));
+                __loop_cont_110: __attribute__((unused));
             }
-            __loop_break_109: __attribute__((unused));
+            __loop_break_110: __attribute__((unused));
         }
 #line 41 "src/main.vl"
         size_t num_len = (lex->pos - start_pos);
@@ -12141,9 +12442,9 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
             lex->pos += 1;
 #line 47 "src/main.vl"
             lex->col += 1;
-            __loop_cont_110: __attribute__((unused));
+            __loop_cont_111: __attribute__((unused));
         }
-        __loop_break_110: __attribute__((unused));
+        __loop_break_111: __attribute__((unused));
 #line 50 "src/main.vl"
         if (((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[lex->pos], '.')) && is_digit(src[(lex->pos + 1)]))) {
 #line 51 "src/main.vl"
@@ -12158,9 +12459,9 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
                 lex->pos += 1;
 #line 56 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_111: __attribute__((unused));
+                __loop_cont_112: __attribute__((unused));
             }
-            __loop_break_111: __attribute__((unused));
+            __loop_break_112: __attribute__((unused));
         }
 #line 60 "src/main.vl"
         if (((lex->pos < len) && (velo_cmp_eq_u_s(src[lex->pos], 'e') || velo_cmp_eq_u_s(src[lex->pos], 'E')))) {
@@ -12197,9 +12498,9 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
                     lex->pos += 1;
 #line 77 "src/main.vl"
                     lex->col += 1;
-                    __loop_cont_112: __attribute__((unused));
+                    __loop_cont_113: __attribute__((unused));
                 }
-                __loop_break_112: __attribute__((unused));
+                __loop_break_113: __attribute__((unused));
             }
         }
 #line 82 "src/main.vl"
@@ -12212,9 +12513,9 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
                 lex->pos += 1;
 #line 86 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_113: __attribute__((unused));
+                __loop_cont_114: __attribute__((unused));
             }
-            __loop_break_113: __attribute__((unused));
+            __loop_break_114: __attribute__((unused));
 #line 88 "src/main.vl"
             size_t s_len = (lex->pos - s_start);
 #line 89 "src/main.vl"
@@ -12263,9 +12564,9 @@ void lex_raw_string(Lexer* lex, size_t start_pos, int32_t start_line, int32_t st
 #line 115 "src/main.vl"
             lex->col += 1;
         }
-        __loop_cont_114: __attribute__((unused));
+        __loop_cont_115: __attribute__((unused));
     }
-    __loop_break_114: __attribute__((unused));
+    __loop_break_115: __attribute__((unused));
 #line 118 "src/main.vl"
     if (((lex->pos < len) && velo_cmp_eq_u_s(src[lex->pos], '`'))) {
 #line 119 "src/main.vl"
@@ -12312,9 +12613,9 @@ void lex_string(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
 #line 142 "src/main.vl"
             lex->col += 1;
         }
-        __loop_cont_115: __attribute__((unused));
+        __loop_cont_116: __attribute__((unused));
     }
-    __loop_break_115: __attribute__((unused));
+    __loop_break_116: __attribute__((unused));
 #line 145 "src/main.vl"
     if (((lex->pos < len) && velo_cmp_eq_u_s(src[lex->pos], '"'))) {
 #line 146 "src/main.vl"
@@ -12656,9 +12957,9 @@ void tokenize(Lexer* lex) {
             for (int32_t it = 0; (((lex->pos < len) && velo_cmp_ne_u_s(src[lex->pos], '\n'))); it++) {
 #line 84 "src/main.vl"
                 lex->pos += 1;
-                __loop_cont_117: __attribute__((unused));
+                __loop_cont_118: __attribute__((unused));
             }
-            __loop_break_117: __attribute__((unused));
+            __loop_break_118: __attribute__((unused));
         } else
 #line 86 "src/main.vl"
         if (((velo_cmp_eq_u_s(c, '/') && ((lex->pos + 1) < len)) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '*'))) {
@@ -12701,9 +13002,9 @@ void tokenize(Lexer* lex) {
 #line 106 "src/main.vl"
                     lex->pos += 1;
                 }
-                __loop_cont_118: __attribute__((unused));
+                __loop_cont_119: __attribute__((unused));
             }
-            __loop_break_118: __attribute__((unused));
+            __loop_break_119: __attribute__((unused));
 #line 109 "src/main.vl"
             if (velo_cmp_gt_u_s(depth, 0)) {
 #line 110 "src/main.vl"
@@ -12720,9 +13021,9 @@ void tokenize(Lexer* lex) {
                 lex->pos += 1;
 #line 116 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_119: __attribute__((unused));
+                __loop_cont_120: __attribute__((unused));
             }
-            __loop_break_119: __attribute__((unused));
+            __loop_break_120: __attribute__((unused));
 #line 118 "src/main.vl"
             size_t tok_len = (lex->pos - start_pos);
 #line 119 "src/main.vl"
@@ -13072,9 +13373,9 @@ void tokenize(Lexer* lex) {
                 lex->col += 1;
             }
         }
-        __loop_cont_116: __attribute__((unused));
+        __loop_cont_117: __attribute__((unused));
     }
-    __loop_break_116: __attribute__((unused));
+    __loop_break_117: __attribute__((unused));
 #line 218 "src/main.vl"
     add_token(lex, TOK_EOF, lex->pos, 0, lex->line, lex->col);
 }
@@ -13092,9 +13393,9 @@ bool is_tuple_type(const char* name) {
     for (int32_t it = 0; ((velo_cmp_gt_u_s(((usize)strlen(clean)), 0) && velo_cmp_eq_u_s(clean[0], '@'))); it++) {
 #line 10 "src/main.vl"
         clean = copy_slice_to_string(clean, 1, (((usize)strlen(clean)) - 1));
-        __loop_cont_120: __attribute__((unused));
+        __loop_cont_121: __attribute__((unused));
     }
-    __loop_break_120: __attribute__((unused));
+    __loop_break_121: __attribute__((unused));
 #line 12 "src/main.vl"
     size_t len = ((usize)strlen(clean));
 #line 13 "src/main.vl"
@@ -13129,9 +13430,9 @@ bool is_tuple_type(const char* name) {
         }
 #line 22 "src/main.vl"
         i += 1;
-        __loop_cont_121: __attribute__((unused));
+        __loop_cont_122: __attribute__((unused));
     }
-    __loop_break_121: __attribute__((unused));
+    __loop_break_122: __attribute__((unused));
 #line 24 "src/main.vl"
     return has_comma;
 }
@@ -13149,9 +13450,9 @@ size_t tuple_elem_count(const char* name) {
     for (int32_t it = 0; ((velo_cmp_gt_u_s(((usize)strlen(clean)), 0) && velo_cmp_eq_u_s(clean[0], '@'))); it++) {
 #line 32 "src/main.vl"
         clean = copy_slice_to_string(clean, 1, (((usize)strlen(clean)) - 1));
-        __loop_cont_122: __attribute__((unused));
+        __loop_cont_123: __attribute__((unused));
     }
-    __loop_break_122: __attribute__((unused));
+    __loop_break_123: __attribute__((unused));
 #line 34 "src/main.vl"
     size_t len = ((usize)strlen(clean));
 #line 35 "src/main.vl"
@@ -13181,9 +13482,9 @@ size_t tuple_elem_count(const char* name) {
         }
 #line 43 "src/main.vl"
         i += 1;
-        __loop_cont_123: __attribute__((unused));
+        __loop_cont_124: __attribute__((unused));
     }
-    __loop_break_123: __attribute__((unused));
+    __loop_break_124: __attribute__((unused));
 #line 45 "src/main.vl"
     return count;
 }
@@ -13196,9 +13497,9 @@ const char* tuple_elem_type(const char* name, size_t target_idx) {
     for (int32_t it = 0; ((velo_cmp_gt_u_s(((usize)strlen(clean)), 0) && velo_cmp_eq_u_s(clean[0], '@'))); it++) {
 #line 52 "src/main.vl"
         clean = copy_slice_to_string(clean, 1, (((usize)strlen(clean)) - 1));
-        __loop_cont_124: __attribute__((unused));
+        __loop_cont_125: __attribute__((unused));
     }
-    __loop_break_124: __attribute__((unused));
+    __loop_break_125: __attribute__((unused));
 #line 54 "src/main.vl"
     size_t len = ((usize)strlen(clean));
 #line 55 "src/main.vl"
@@ -13233,9 +13534,9 @@ const char* tuple_elem_type(const char* name, size_t target_idx) {
                 for (int32_t it = 0; (((seg_start < i) && velo_cmp_eq_u_s(clean[seg_start], ' '))); it++) {
 #line 66 "src/main.vl"
                     seg_start += 1;
-                    __loop_cont_126: __attribute__((unused));
+                    __loop_cont_127: __attribute__((unused));
                 }
-                __loop_break_126: __attribute__((unused));
+                __loop_break_127: __attribute__((unused));
 #line 67 "src/main.vl"
                 return copy_slice_to_string(clean, seg_start, (i - seg_start));
             }
@@ -13246,9 +13547,9 @@ const char* tuple_elem_type(const char* name, size_t target_idx) {
         }
 #line 72 "src/main.vl"
         i += 1;
-        __loop_cont_125: __attribute__((unused));
+        __loop_cont_126: __attribute__((unused));
     }
-    __loop_break_125: __attribute__((unused));
+    __loop_break_126: __attribute__((unused));
 #line 74 "src/main.vl"
     return "";
 }
@@ -13266,9 +13567,9 @@ const char* tuple_c_name(const char* name) {
     for (int32_t it = 0; ((velo_cmp_gt_u_s(((usize)strlen(clean)), 0) && velo_cmp_eq_u_s(clean[0], '@'))); it++) {
 #line 82 "src/main.vl"
         clean = copy_slice_to_string(clean, 1, (((usize)strlen(clean)) - 1));
-        __loop_cont_127: __attribute__((unused));
+        __loop_cont_128: __attribute__((unused));
     }
-    __loop_break_127: __attribute__((unused));
+    __loop_break_128: __attribute__((unused));
 #line 84 "src/main.vl"
     StringBuilder sb = create_sb((((usize)strlen(clean)) + 16));
 #line 85 "src/main.vl"
@@ -13302,9 +13603,9 @@ const char* tuple_c_name(const char* name) {
         }
 #line 100 "src/main.vl"
         i += 1;
-        __loop_cont_128: __attribute__((unused));
+        __loop_cont_129: __attribute__((unused));
     }
-    __loop_break_128: __attribute__((unused));
+    __loop_break_129: __attribute__((unused));
 #line 102 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -13635,9 +13936,9 @@ const char* strip_pointer_prefix(const char* type_name) {
             buf[i] = type_name[(1 + i)];
 #line 143 "src/main.vl"
             i += 1;
-            __loop_cont_129: __attribute__((unused));
+            __loop_cont_130: __attribute__((unused));
         }
-        __loop_break_129: __attribute__((unused));
+        __loop_break_130: __attribute__((unused));
 #line 145 "src/main.vl"
         buf[plen] = ((uint8_t)(0));
 #line 146 "src/main.vl"
@@ -13670,9 +13971,9 @@ const char* prepend_pointer_prefix(const char* type_name) {
         buf[(1 + i)] = type_name[i];
 #line 161 "src/main.vl"
         i += 1;
-        __loop_cont_130: __attribute__((unused));
+        __loop_cont_131: __attribute__((unused));
     }
-    __loop_break_130: __attribute__((unused));
+    __loop_break_131: __attribute__((unused));
 #line 163 "src/main.vl"
     buf[plen] = ((uint8_t)(0));
 #line 164 "src/main.vl"
@@ -13770,9 +14071,9 @@ const char* opt_type_c_name(const char* name) {
 #line 205 "src/main.vl"
             i += 1;
         }
-        __loop_cont_131: __attribute__((unused));
+        __loop_cont_132: __attribute__((unused));
     }
-    __loop_break_131: __attribute__((unused));
+    __loop_break_132: __attribute__((unused));
 #line 207 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -13803,9 +14104,9 @@ const char* make_optional_type(const char* name) {
         buf[(1 + i)] = name[i];
 #line 220 "src/main.vl"
         i += 1;
-        __loop_cont_132: __attribute__((unused));
+        __loop_cont_133: __attribute__((unused));
     }
-    __loop_break_132: __attribute__((unused));
+    __loop_break_133: __attribute__((unused));
 #line 222 "src/main.vl"
     buf[(len + 1)] = ((uint8_t)(0));
 #line 223 "src/main.vl"
@@ -13928,9 +14229,9 @@ bool types_are_compatible(const char* expected, const char* actual) {
             }
 #line 276 "src/main.vl"
             i += 1;
-            __loop_cont_133: __attribute__((unused));
+            __loop_cont_134: __attribute__((unused));
         }
-        __loop_break_133: __attribute__((unused));
+        __loop_break_134: __attribute__((unused));
 #line 278 "src/main.vl"
         return true;
     }
@@ -13980,9 +14281,9 @@ bool is_or_type(const char* name) {
         }
 #line 293 "src/main.vl"
         i += 1;
-        __loop_cont_134: __attribute__((unused));
+        __loop_cont_135: __attribute__((unused));
     }
-    __loop_break_134: __attribute__((unused));
+    __loop_break_135: __attribute__((unused));
 #line 295 "src/main.vl"
     return false;
 }
@@ -14024,9 +14325,9 @@ const char* or_type_success(const char* name) {
         }
 #line 308 "src/main.vl"
         idx += 1;
-        __loop_cont_135: __attribute__((unused));
+        __loop_cont_136: __attribute__((unused));
     }
-    __loop_break_135: __attribute__((unused));
+    __loop_break_136: __attribute__((unused));
 #line 310 "src/main.vl"
     return name;
 }
@@ -14068,9 +14369,9 @@ const char* or_type_error(const char* name) {
         }
 #line 323 "src/main.vl"
         idx += 1;
-        __loop_cont_136: __attribute__((unused));
+        __loop_cont_137: __attribute__((unused));
     }
-    __loop_break_136: __attribute__((unused));
+    __loop_break_137: __attribute__((unused));
 #line 325 "src/main.vl"
     return "";
 }
@@ -14123,9 +14424,9 @@ const char* or_type_c_name(const char* name) {
 #line 342 "src/main.vl"
             i += 1;
         }
-        __loop_cont_137: __attribute__((unused));
+        __loop_cont_138: __attribute__((unused));
     }
-    __loop_break_137: __attribute__((unused));
+    __loop_break_138: __attribute__((unused));
 #line 344 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -14152,9 +14453,9 @@ bool is_fixed_array_type(const char* name) {
     for (int32_t it = 0; ((((i < len) && velo_cmp_ge_u_s(clean[i], '0')) && velo_cmp_le_u_s(clean[i], '9'))); it++) {
 #line 355 "src/main.vl"
         i += 1;
-        __loop_cont_138: __attribute__((unused));
+        __loop_cont_139: __attribute__((unused));
     }
-    __loop_break_138: __attribute__((unused));
+    __loop_break_139: __attribute__((unused));
 #line 357 "src/main.vl"
     if (((velo_cmp_eq_u_s(i, 1) || (i >= len)) || velo_cmp_ne_u_s(clean[i], ']'))) {
 #line 357 "src/main.vl"
@@ -14190,9 +14491,9 @@ int64_t fixed_array_len(const char* name) {
         res = ((res * 10) + ((int64_t)((clean[i] - '0'))));
 #line 371 "src/main.vl"
         i += 1;
-        __loop_cont_139: __attribute__((unused));
+        __loop_cont_140: __attribute__((unused));
     }
-    __loop_break_139: __attribute__((unused));
+    __loop_break_140: __attribute__((unused));
 #line 373 "src/main.vl"
     return res;
 }
@@ -14219,9 +14520,9 @@ const char* fixed_array_elem_type(const char* name) {
     for (int32_t it = 0; (((i < len) && velo_cmp_ne_u_s(clean[i], ']'))); it++) {
 #line 384 "src/main.vl"
         i += 1;
-        __loop_cont_140: __attribute__((unused));
+        __loop_cont_141: __attribute__((unused));
     }
-    __loop_break_140: __attribute__((unused));
+    __loop_break_141: __attribute__((unused));
 #line 386 "src/main.vl"
     if ((((i + 1) < len) && velo_cmp_eq_u_s(clean[i], ']'))) {
 #line 387 "src/main.vl"
@@ -15545,9 +15846,9 @@ void parser_skip_newlines(Parser* p) {
     for (int32_t it = 0; ((parser_check(p, TOK_NEWLINE) || parser_check(p, TOK_SEMICOLON))); it++) {
 #line 127 "src/main.vl"
         parser_advance(p);
-        __loop_cont_141: __attribute__((unused));
+        __loop_cont_142: __attribute__((unused));
     }
-    __loop_break_141: __attribute__((unused));
+    __loop_break_142: __attribute__((unused));
 }
 
 #line 132 "src/main.vl"
@@ -15598,9 +15899,9 @@ bool is_struct_literal(Parser* p) {
             }
 #line 152 "src/main.vl"
             idx += 1;
-            __loop_cont_142: __attribute__((unused));
+            __loop_cont_143: __attribute__((unused));
         }
-        __loop_break_142: __attribute__((unused));
+        __loop_break_143: __attribute__((unused));
 #line 154 "src/main.vl"
         if (velo_cmp_gt_u_s(depth, 0)) {
 #line 154 "src/main.vl"
@@ -15642,9 +15943,9 @@ bool is_struct_literal(Parser* p) {
         }
 #line 171 "src/main.vl"
         idx += 1;
-        __loop_cont_143: __attribute__((unused));
+        __loop_cont_144: __attribute__((unused));
     }
-    __loop_break_143: __attribute__((unused));
+    __loop_break_144: __attribute__((unused));
 #line 173 "src/main.vl"
     return false;
 }
@@ -15676,9 +15977,9 @@ bool is_generic_call(Parser* p) {
         }
 #line 185 "src/main.vl"
         idx += 1;
-        __loop_cont_144: __attribute__((unused));
+        __loop_cont_145: __attribute__((unused));
     }
-    __loop_break_144: __attribute__((unused));
+    __loop_break_145: __attribute__((unused));
 #line 187 "src/main.vl"
     if (velo_cmp_gt_u_s(depth, 0)) {
 #line 187 "src/main.vl"
@@ -15702,9 +16003,9 @@ ExprNode* parse_factor(Parser* p) {
         ExprNode* right = parse_unary(p);
 #line 15 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_145: __attribute__((unused));
+        __loop_cont_146: __attribute__((unused));
     }
-    __loop_break_145: __attribute__((unused));
+    __loop_break_146: __attribute__((unused));
 #line 17 "src/main.vl"
     return expr;
 }
@@ -15721,9 +16022,9 @@ ExprNode* parse_term(Parser* p) {
         ExprNode* right = parse_factor(p);
 #line 26 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_146: __attribute__((unused));
+        __loop_cont_147: __attribute__((unused));
     }
-    __loop_break_146: __attribute__((unused));
+    __loop_break_147: __attribute__((unused));
 #line 28 "src/main.vl"
     return expr;
 }
@@ -15740,9 +16041,9 @@ ExprNode* parse_shift(Parser* p) {
         ExprNode* right = parse_term(p);
 #line 37 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_147: __attribute__((unused));
+        __loop_cont_148: __attribute__((unused));
     }
-    __loop_break_147: __attribute__((unused));
+    __loop_break_148: __attribute__((unused));
 #line 39 "src/main.vl"
     return expr;
 }
@@ -15759,9 +16060,9 @@ ExprNode* parse_comparison(Parser* p) {
         ExprNode* right = parse_shift(p);
 #line 48 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_148: __attribute__((unused));
+        __loop_cont_149: __attribute__((unused));
     }
-    __loop_break_148: __attribute__((unused));
+    __loop_break_149: __attribute__((unused));
 #line 50 "src/main.vl"
     return expr;
 }
@@ -15778,9 +16079,9 @@ ExprNode* parse_equality(Parser* p) {
         ExprNode* right = parse_comparison(p);
 #line 59 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_149: __attribute__((unused));
+        __loop_cont_150: __attribute__((unused));
     }
-    __loop_break_149: __attribute__((unused));
+    __loop_break_150: __attribute__((unused));
 #line 61 "src/main.vl"
     return expr;
 }
@@ -15797,9 +16098,9 @@ ExprNode* parse_bitwise_and(Parser* p) {
         ExprNode* right = parse_equality(p);
 #line 70 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_150: __attribute__((unused));
+        __loop_cont_151: __attribute__((unused));
     }
-    __loop_break_150: __attribute__((unused));
+    __loop_break_151: __attribute__((unused));
 #line 72 "src/main.vl"
     return expr;
 }
@@ -15816,9 +16117,9 @@ ExprNode* parse_bitwise_xor(Parser* p) {
         ExprNode* right = parse_bitwise_and(p);
 #line 81 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_151: __attribute__((unused));
+        __loop_cont_152: __attribute__((unused));
     }
-    __loop_break_151: __attribute__((unused));
+    __loop_break_152: __attribute__((unused));
 #line 83 "src/main.vl"
     return expr;
 }
@@ -15835,9 +16136,9 @@ ExprNode* parse_bitwise_or(Parser* p) {
         ExprNode* right = parse_bitwise_xor(p);
 #line 92 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_152: __attribute__((unused));
+        __loop_cont_153: __attribute__((unused));
     }
-    __loop_break_152: __attribute__((unused));
+    __loop_break_153: __attribute__((unused));
 #line 94 "src/main.vl"
     return expr;
 }
@@ -15854,9 +16155,9 @@ ExprNode* parse_logical_and(Parser* p) {
         ExprNode* right = parse_bitwise_or(p);
 #line 103 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_153: __attribute__((unused));
+        __loop_cont_154: __attribute__((unused));
     }
-    __loop_break_153: __attribute__((unused));
+    __loop_break_154: __attribute__((unused));
 #line 105 "src/main.vl"
     return expr;
 }
@@ -15879,9 +16180,9 @@ ExprNode* parse_logical_or(Parser* p) {
 #line 117 "src/main.vl"
             expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
         }
-        __loop_cont_154: __attribute__((unused));
+        __loop_cont_155: __attribute__((unused));
     }
-    __loop_break_154: __attribute__((unused));
+    __loop_break_155: __attribute__((unused));
 #line 120 "src/main.vl"
     return expr;
 }
@@ -15898,9 +16199,9 @@ ExprNode* parse_coalesce(Parser* p) {
         ExprNode* right = parse_logical_or(p);
 #line 129 "src/main.vl"
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col);
-        __loop_cont_155: __attribute__((unused));
+        __loop_cont_156: __attribute__((unused));
     }
-    __loop_break_155: __attribute__((unused));
+    __loop_break_156: __attribute__((unused));
 #line 131 "src/main.vl"
     return expr;
 }
@@ -15992,9 +16293,9 @@ StmtNode* parse_on_stmt(Parser* p) {
                 cur_val = next_val;
 #line 50 "src/main.vl"
                 val_count += 1;
-                __loop_cont_157: __attribute__((unused));
+                __loop_cont_158: __attribute__((unused));
             }
-            __loop_break_157: __attribute__((unused));
+            __loop_break_158: __attribute__((unused));
 #line 52 "src/main.vl"
             if ((parser_check(p, TOK_FAT_ARROW) || parser_check(p, TOK_COLON))) {
 #line 53 "src/main.vl"
@@ -16041,9 +16342,9 @@ StmtNode* parse_on_stmt(Parser* p) {
         case_count += 1;
 #line 80 "src/main.vl"
         parser_skip_newlines(p);
-        __loop_cont_156: __attribute__((unused));
+        __loop_cont_157: __attribute__((unused));
     }
-    __loop_break_156: __attribute__((unused));
+    __loop_break_157: __attribute__((unused));
 #line 83 "src/main.vl"
     parser_consume(p, TOK_RBRACE, "Expected '}' at end of on block");
 #line 84 "src/main.vl"
@@ -16085,9 +16386,9 @@ StmtNode* parse_block(Parser* p) {
         }
 #line 33 "src/main.vl"
         parser_skip_newlines(p);
-        __loop_cont_158: __attribute__((unused));
+        __loop_cont_159: __attribute__((unused));
     }
-    __loop_break_158: __attribute__((unused));
+    __loop_break_159: __attribute__((unused));
 #line 36 "src/main.vl"
     parser_consume(p, TOK_RBRACE, "Expected '}' at end of block");
 #line 37 "src/main.vl"
@@ -16172,9 +16473,9 @@ StmtNode* parse_loop_stmt(Parser* p) {
                         parser_advance(p);
 #line 92 "src/main.vl"
                         guard += 1;
-                        __loop_cont_159: __attribute__((unused));
+                        __loop_cont_160: __attribute__((unused));
                     }
-                    __loop_break_159: __attribute__((unused));
+                    __loop_break_160: __attribute__((unused));
                 }
 #line 95 "src/main.vl"
                 parser_consume(p, TOK_OF, "Expected 'of' after loop bindings");
@@ -16311,11 +16612,11 @@ StmtNode* parse_destructure_stmt(Parser* p, bool is_mut, int32_t line, int32_t c
 #line 177 "src/main.vl"
         if ((!parser_match(p, TOK_COMMA))) {
 #line 178 "src/main.vl"
-            goto __loop_break_160;
+            goto __loop_break_161;
         }
-        __loop_cont_160: __attribute__((unused));
+        __loop_cont_161: __attribute__((unused));
     }
-    __loop_break_160: __attribute__((unused));
+    __loop_break_161: __attribute__((unused));
 #line 181 "src/main.vl"
     parser_consume(p, TOK_RPAREN, "Expected ')' after destructuring variables");
 #line 182 "src/main.vl"
@@ -16590,9 +16891,9 @@ ExprNode* parse_lit_bracket_list(Parser* p) {
 #line 37 "src/main.vl"
                 more = false;
             }
-            __loop_cont_161: __attribute__((unused));
+            __loop_cont_162: __attribute__((unused));
         }
-        __loop_break_161: __attribute__((unused));
+        __loop_break_162: __attribute__((unused));
     }
 #line 41 "src/main.vl"
     return first;
@@ -16610,9 +16911,9 @@ size_t lit_chain_count(ExprNode* first) {
         n += 1;
 #line 51 "src/main.vl"
         cur = cur->next;
-        __loop_cont_162: __attribute__((unused));
+        __loop_cont_163: __attribute__((unused));
     }
-    __loop_break_162: __attribute__((unused));
+    __loop_break_163: __attribute__((unused));
 #line 53 "src/main.vl"
     return n;
 }
@@ -16723,9 +17024,9 @@ ExprNode* parse_heap_literal(Parser* p) {
 #line 99 "src/main.vl"
                     more_pairs = false;
                 }
-                __loop_cont_163: __attribute__((unused));
+                __loop_cont_164: __attribute__((unused));
             }
-            __loop_break_163: __attribute__((unused));
+            __loop_break_164: __attribute__((unused));
         }
 #line 102 "src/main.vl"
         parser_consume(p, TOK_RBRACKET, "Expected ']' at end of heap map literal");
@@ -16777,9 +17078,9 @@ const char* format_c_hex_with_suffix(const char* source, size_t start, size_t le
         }
 #line 130 "src/main.vl"
         i += 1;
-        __loop_cont_164: __attribute__((unused));
+        __loop_cont_165: __attribute__((unused));
     }
-    __loop_break_164: __attribute__((unused));
+    __loop_break_165: __attribute__((unused));
 #line 132 "src/main.vl"
     if ((sfx != NULL)) {
 #line 133 "src/main.vl"
@@ -16794,9 +17095,9 @@ const char* format_c_hex_with_suffix(const char* source, size_t start, size_t le
             count += 1;
 #line 138 "src/main.vl"
             j += 1;
-            __loop_cont_165: __attribute__((unused));
+            __loop_cont_166: __attribute__((unused));
         }
-        __loop_break_165: __attribute__((unused));
+        __loop_break_166: __attribute__((unused));
     }
 #line 141 "src/main.vl"
     buf[count] = ((uint8_t)(0));
@@ -17037,9 +17338,9 @@ ExprNode* parse_anon_act(Parser* p) {
 #line 38 "src/main.vl"
                 more_params = false;
             }
-            __loop_cont_166: __attribute__((unused));
+            __loop_cont_167: __attribute__((unused));
         }
-        __loop_break_166: __attribute__((unused));
+        __loop_break_167: __attribute__((unused));
     }
 #line 42 "src/main.vl"
     parser_consume(p, TOK_RPAREN, "Expected ')' after parameters");
@@ -17185,11 +17486,11 @@ ExprNode* parse_primary(Parser* p) {
 #line 127 "src/main.vl"
                 if ((!parser_match(p, TOK_COMMA))) {
 #line 128 "src/main.vl"
-                    goto __loop_break_167;
+                    goto __loop_break_168;
                 }
-                __loop_cont_167: __attribute__((unused));
+                __loop_cont_168: __attribute__((unused));
             }
-            __loop_break_167: __attribute__((unused));
+            __loop_break_168: __attribute__((unused));
 #line 131 "src/main.vl"
             parser_consume(p, TOK_RBRACKET, "Expected ']' after type arguments in struct literal");
 #line 132 "src/main.vl"
@@ -17241,9 +17542,9 @@ ExprNode* parse_primary(Parser* p) {
             }
 #line 160 "src/main.vl"
             parser_skip_newlines(p);
-            __loop_cont_168: __attribute__((unused));
+            __loop_cont_169: __attribute__((unused));
         }
-        __loop_break_168: __attribute__((unused));
+        __loop_break_169: __attribute__((unused));
 #line 162 "src/main.vl"
         parser_consume(p, TOK_RBRACE, "Expected '}' at end of struct literal");
 #line 163 "src/main.vl"
@@ -17352,9 +17653,9 @@ ExprNode* parse_primary(Parser* p) {
 #line 232 "src/main.vl"
                         more_args = false;
                     }
-                    __loop_cont_169: __attribute__((unused));
+                    __loop_cont_170: __attribute__((unused));
                 }
-                __loop_break_169: __attribute__((unused));
+                __loop_break_170: __attribute__((unused));
             }
 #line 236 "src/main.vl"
             parser_consume(p, TOK_RPAREN, "Expected ')' after variant arguments");
@@ -17404,9 +17705,9 @@ ExprNode* parse_primary(Parser* p) {
 #line 253 "src/main.vl"
                     more_elems = false;
                 }
-                __loop_cont_170: __attribute__((unused));
+                __loop_cont_171: __attribute__((unused));
             }
-            __loop_break_170: __attribute__((unused));
+            __loop_break_171: __attribute__((unused));
         }
 #line 257 "src/main.vl"
         parser_consume(p, TOK_RBRACKET, "Expected ']' at end of shelf literal");
@@ -17476,9 +17777,9 @@ ExprNode* parse_primary(Parser* p) {
 #line 275 "src/main.vl"
                     more_pairs = false;
                 }
-                __loop_cont_171: __attribute__((unused));
+                __loop_cont_172: __attribute__((unused));
             }
-            __loop_break_171: __attribute__((unused));
+            __loop_break_172: __attribute__((unused));
         }
 #line 278 "src/main.vl"
         parser_consume(p, TOK_RBRACKET, "Expected ']' at end of map literal");
@@ -17535,9 +17836,9 @@ ExprNode* parse_primary(Parser* p) {
 #line 300 "src/main.vl"
                     more_elems = false;
                 }
-                __loop_cont_172: __attribute__((unused));
+                __loop_cont_173: __attribute__((unused));
             }
-            __loop_break_172: __attribute__((unused));
+            __loop_break_173: __attribute__((unused));
         }
 #line 303 "src/main.vl"
         parser_consume(p, TOK_RBRACKET, "Expected ']' at end of array literal");
@@ -17583,11 +17884,11 @@ ExprNode* parse_primary(Parser* p) {
 #line 329 "src/main.vl"
                 if ((!parser_match(p, TOK_COMMA))) {
 #line 330 "src/main.vl"
-                    goto __loop_break_173;
+                    goto __loop_break_174;
                 }
-                __loop_cont_173: __attribute__((unused));
+                __loop_cont_174: __attribute__((unused));
             }
-            __loop_break_173: __attribute__((unused));
+            __loop_break_174: __attribute__((unused));
 #line 333 "src/main.vl"
             parser_consume(p, TOK_RPAREN, "Expected ')' after tuple elements");
 #line 334 "src/main.vl"
@@ -17682,11 +17983,11 @@ ExprNode* parse_postfix(Parser* p) {
 #line 52 "src/main.vl"
                 if ((!parser_match(p, TOK_COMMA))) {
 #line 53 "src/main.vl"
-                    goto __loop_break_175;
+                    goto __loop_break_176;
                 }
-                __loop_cont_175: __attribute__((unused));
+                __loop_cont_176: __attribute__((unused));
             }
-            __loop_break_175: __attribute__((unused));
+            __loop_break_176: __attribute__((unused));
 #line 56 "src/main.vl"
             parser_consume(p, TOK_RBRACKET, "Expected ']' after generic type arguments");
 #line 57 "src/main.vl"
@@ -17729,9 +18030,9 @@ ExprNode* parse_postfix(Parser* p) {
 #line 77 "src/main.vl"
                         more_args = false;
                     }
-                    __loop_cont_176: __attribute__((unused));
+                    __loop_cont_177: __attribute__((unused));
                 }
-                __loop_break_176: __attribute__((unused));
+                __loop_break_177: __attribute__((unused));
             }
 #line 81 "src/main.vl"
             parser_consume(p, TOK_RPAREN, "Expected ')' after argument list");
@@ -17807,9 +18108,9 @@ ExprNode* parse_postfix(Parser* p) {
 #line 116 "src/main.vl"
                         more_args = false;
                     }
-                    __loop_cont_177: __attribute__((unused));
+                    __loop_cont_178: __attribute__((unused));
                 }
-                __loop_break_177: __attribute__((unused));
+                __loop_break_178: __attribute__((unused));
             }
 #line 120 "src/main.vl"
             parser_consume(p, TOK_RPAREN, "Expected ')' after argument list");
@@ -17819,9 +18120,9 @@ ExprNode* parse_postfix(Parser* p) {
 #line 123 "src/main.vl"
             parsing_postfix = false;
         }
-        __loop_cont_174: __attribute__((unused));
+        __loop_cont_175: __attribute__((unused));
     }
-    __loop_break_174: __attribute__((unused));
+    __loop_break_175: __attribute__((unused));
 #line 126 "src/main.vl"
     return expr;
 }
@@ -17995,9 +18296,9 @@ const char* mangle_type_for_op(const char* t) {
     for (int32_t it = 0; (((ptr_count < len) && velo_cmp_eq_u_s(t[ptr_count], '@'))); it++) {
 #line 46 "src/main.vl"
         ptr_count += 1;
-        __loop_cont_178: __attribute__((unused));
+        __loop_cont_179: __attribute__((unused));
     }
-    __loop_break_178: __attribute__((unused));
+    __loop_break_179: __attribute__((unused));
 #line 48 "src/main.vl"
     StringBuilder sb = create_sb((len + 16));
 #line 49 "src/main.vl"
@@ -18008,9 +18309,9 @@ const char* mangle_type_for_op(const char* t) {
         sb_append_str((&(sb)), "ptr_");
 #line 52 "src/main.vl"
         p += 1;
-        __loop_cont_179: __attribute__((unused));
+        __loop_cont_180: __attribute__((unused));
     }
-    __loop_break_179: __attribute__((unused));
+    __loop_break_180: __attribute__((unused));
 #line 54 "src/main.vl"
     size_t i = ptr_count;
 #line 55 "src/main.vl"
@@ -18029,9 +18330,9 @@ const char* mangle_type_for_op(const char* t) {
         }
 #line 62 "src/main.vl"
         i += 1;
-        __loop_cont_180: __attribute__((unused));
+        __loop_cont_181: __attribute__((unused));
     }
-    __loop_break_180: __attribute__((unused));
+    __loop_break_181: __attribute__((unused));
 #line 64 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -18058,9 +18359,9 @@ const char* mangle_op_func_name(int32_t op, ParamNode* first_param, size_t param
         sb_append_str((&(sb)), mangled_t);
 #line 78 "src/main.vl"
         cur = cur->next;
-        __loop_cont_181: __attribute__((unused));
+        __loop_cont_182: __attribute__((unused));
     }
-    __loop_break_181: __attribute__((unused));
+    __loop_break_182: __attribute__((unused));
 #line 80 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -18145,11 +18446,11 @@ const char* parse_type_params(Parser* p) {
 #line 35 "src/main.vl"
         if ((!parser_match(p, TOK_COMMA))) {
 #line 36 "src/main.vl"
-            goto __loop_break_182;
+            goto __loop_break_183;
         }
-        __loop_cont_182: __attribute__((unused));
+        __loop_cont_183: __attribute__((unused));
     }
-    __loop_break_182: __attribute__((unused));
+    __loop_break_183: __attribute__((unused));
 #line 39 "src/main.vl"
     parser_consume(p, TOK_RBRACKET, "Expected ']' after type parameters");
 #line 40 "src/main.vl"
@@ -18354,9 +18655,9 @@ StmtNode* parse_data_decl(Parser* p) {
 #line 119 "src/main.vl"
             report_parse(p, "parse", attr_tok.line, attr_tok.col, attr_tok.length, "Unknown data attribute (expected 'align' or 'packed')");
         }
-        __loop_cont_183: __attribute__((unused));
+        __loop_cont_184: __attribute__((unused));
     }
-    __loop_break_183: __attribute__((unused));
+    __loop_break_184: __attribute__((unused));
 #line 123 "src/main.vl"
     parser_consume(p, TOK_LBRACE, "Expected '{' after struct name");
 #line 124 "src/main.vl"
@@ -18410,9 +18711,9 @@ StmtNode* parse_data_decl(Parser* p) {
         parser_match(p, TOK_COMMA);
 #line 154 "src/main.vl"
         parser_skip_newlines(p);
-        __loop_cont_184: __attribute__((unused));
+        __loop_cont_185: __attribute__((unused));
     }
-    __loop_break_184: __attribute__((unused));
+    __loop_break_185: __attribute__((unused));
 #line 157 "src/main.vl"
     parser_consume(p, TOK_RBRACE, "Expected '}' after struct body");
 #line 158 "src/main.vl"
@@ -18530,11 +18831,11 @@ StmtNode* parse_kind_decl(Parser* p) {
 #line 222 "src/main.vl"
                     if ((!parser_match(p, TOK_COMMA))) {
 #line 222 "src/main.vl"
-                        goto __loop_break_186;
+                        goto __loop_break_187;
                     }
-                    __loop_cont_186: __attribute__((unused));
+                    __loop_cont_187: __attribute__((unused));
                 }
-                __loop_break_186: __attribute__((unused));
+                __loop_break_187: __attribute__((unused));
             }
 #line 225 "src/main.vl"
             parser_consume(p, TOK_RPAREN, "Expected ')' after variant fields");
@@ -18561,9 +18862,9 @@ StmtNode* parse_kind_decl(Parser* p) {
         parser_match(p, TOK_COMMA);
 #line 239 "src/main.vl"
         parser_skip_newlines(p);
-        __loop_cont_185: __attribute__((unused));
+        __loop_cont_186: __attribute__((unused));
     }
-    __loop_break_185: __attribute__((unused));
+    __loop_break_186: __attribute__((unused));
 #line 242 "src/main.vl"
     parser_consume(p, TOK_RBRACE, "Expected '}' after kind body");
 #line 243 "src/main.vl"
@@ -18645,9 +18946,9 @@ StmtNode* parse_pact_decl(Parser* p) {
 #line 292 "src/main.vl"
                     more_params = false;
                 }
-                __loop_cont_188: __attribute__((unused));
+                __loop_cont_189: __attribute__((unused));
             }
-            __loop_break_188: __attribute__((unused));
+            __loop_break_189: __attribute__((unused));
         }
 #line 296 "src/main.vl"
         parser_consume(p, TOK_RPAREN, "Expected ')' after parameters");
@@ -18678,9 +18979,9 @@ StmtNode* parse_pact_decl(Parser* p) {
         }
 #line 314 "src/main.vl"
         method_count += 1;
-        __loop_cont_187: __attribute__((unused));
+        __loop_cont_188: __attribute__((unused));
     }
-    __loop_break_187: __attribute__((unused));
+    __loop_break_188: __attribute__((unused));
 #line 317 "src/main.vl"
     parser_consume(p, TOK_RBRACE, "Expected '}' after pact body");
 #line 318 "src/main.vl"
@@ -18724,9 +19025,9 @@ StmtNode* parse_use_decl(Parser* p) {
                 buf[i] = mod_path[i];
 #line 34 "src/main.vl"
                 i += 1;
-                __loop_cont_190: __attribute__((unused));
+                __loop_cont_191: __attribute__((unused));
             }
-            __loop_break_190: __attribute__((unused));
+            __loop_break_191: __attribute__((unused));
 #line 36 "src/main.vl"
             buf[((usize)strlen(mod_path))] = '.';
 #line 37 "src/main.vl"
@@ -18737,16 +19038,16 @@ StmtNode* parse_use_decl(Parser* p) {
                 buf[((((usize)strlen(mod_path)) + 1) + j)] = part_str[j];
 #line 40 "src/main.vl"
                 j += 1;
-                __loop_cont_191: __attribute__((unused));
+                __loop_cont_192: __attribute__((unused));
             }
-            __loop_break_191: __attribute__((unused));
+            __loop_break_192: __attribute__((unused));
 #line 42 "src/main.vl"
             buf[total_len] = ((uint8_t)(0));
 #line 43 "src/main.vl"
             mod_path = ((const char*)(buf));
-            __loop_cont_189: __attribute__((unused));
+            __loop_cont_190: __attribute__((unused));
         }
-        __loop_break_189: __attribute__((unused));
+        __loop_break_190: __attribute__((unused));
     }
 #line 47 "src/main.vl"
     StmtNode* node = make_use_decl(mod_path, use_tok.line, use_tok.col);
@@ -18811,13 +19112,13 @@ StmtNode* parse_use_decl(Parser* p) {
 #line 81 "src/main.vl"
                 if ((!parser_match(p, TOK_COMMA))) {
 #line 82 "src/main.vl"
-                    goto __loop_break_192;
+                    goto __loop_break_193;
                 }
 #line 84 "src/main.vl"
                 parser_skip_newlines(p);
-                __loop_cont_192: __attribute__((unused));
+                __loop_cont_193: __attribute__((unused));
             }
-            __loop_break_192: __attribute__((unused));
+            __loop_break_193: __attribute__((unused));
 #line 86 "src/main.vl"
             parser_consume(p, TOK_RBRACE, "Expected '}' after imported symbols list");
         } else {
@@ -18904,9 +19205,9 @@ StmtNode* parse_function_decl(Parser* p) {
 #line 139 "src/main.vl"
                 more_params = false;
             }
-            __loop_cont_193: __attribute__((unused));
+            __loop_cont_194: __attribute__((unused));
         }
-        __loop_break_193: __attribute__((unused));
+        __loop_break_194: __attribute__((unused));
     }
 #line 144 "src/main.vl"
     parser_consume(p, TOK_RPAREN, "Expected ')' after parameters");
@@ -19012,9 +19313,9 @@ StmtNode* parse_extern_decl(Parser* p) {
 #line 208 "src/main.vl"
                 more_params = false;
             }
-            __loop_cont_194: __attribute__((unused));
+            __loop_cont_195: __attribute__((unused));
         }
-        __loop_break_194: __attribute__((unused));
+        __loop_break_195: __attribute__((unused));
     }
 #line 213 "src/main.vl"
     parser_consume(p, TOK_RPAREN, "Expected ')' after parameters");
@@ -19082,9 +19383,9 @@ const char* wrap_type_modifiers(Parser* p, const char* base_type, size_t at_coun
             buf[i] = '@';
 #line 23 "src/main.vl"
             i += 1;
-            __loop_cont_195: __attribute__((unused));
+            __loop_cont_196: __attribute__((unused));
         }
-        __loop_break_195: __attribute__((unused));
+        __loop_break_196: __attribute__((unused));
 #line 24 "src/main.vl"
         size_t j = 0;
 #line 25 "src/main.vl"
@@ -19093,9 +19394,9 @@ const char* wrap_type_modifiers(Parser* p, const char* base_type, size_t at_coun
             buf[(at_count + j)] = res[j];
 #line 25 "src/main.vl"
             j += 1;
-            __loop_cont_196: __attribute__((unused));
+            __loop_cont_197: __attribute__((unused));
         }
-        __loop_break_196: __attribute__((unused));
+        __loop_break_197: __attribute__((unused));
 #line 26 "src/main.vl"
         buf[total_len] = ((uint8_t)(0));
 #line 27 "src/main.vl"
@@ -19146,9 +19447,9 @@ const char* parse_type_annotation_ex(Parser* p, bool allow_or) {
     for (int32_t it = 0; (parser_match(p, TOK_AT)); it++) {
 #line 54 "src/main.vl"
         at_count += 1;
-        __loop_cont_197: __attribute__((unused));
+        __loop_cont_198: __attribute__((unused));
     }
-    __loop_break_197: __attribute__((unused));
+    __loop_break_198: __attribute__((unused));
 #line 57 "src/main.vl"
     if (parser_match(p, TOK_ACT)) {
 #line 58 "src/main.vl"
@@ -19175,11 +19476,11 @@ const char* parse_type_annotation_ex(Parser* p, bool allow_or) {
 #line 69 "src/main.vl"
             if ((!parser_match(p, TOK_COMMA))) {
 #line 70 "src/main.vl"
-                goto __loop_break_198;
+                goto __loop_break_199;
             }
-            __loop_cont_198: __attribute__((unused));
+            __loop_cont_199: __attribute__((unused));
         }
-        __loop_break_198: __attribute__((unused));
+        __loop_break_199: __attribute__((unused));
 #line 73 "src/main.vl"
         parser_consume(p, TOK_RPAREN, "Expected ')' after parameter types in function type");
 #line 74 "src/main.vl"
@@ -19263,11 +19564,11 @@ const char* parse_type_annotation_ex(Parser* p, bool allow_or) {
 #line 119 "src/main.vl"
             if ((!parser_match(p, TOK_COMMA))) {
 #line 120 "src/main.vl"
-                goto __loop_break_199;
+                goto __loop_break_200;
             }
-            __loop_cont_199: __attribute__((unused));
+            __loop_cont_200: __attribute__((unused));
         }
-        __loop_break_199: __attribute__((unused));
+        __loop_break_200: __attribute__((unused));
 #line 123 "src/main.vl"
         parser_consume(p, TOK_RPAREN, "Expected ')' after tuple element types");
 #line 124 "src/main.vl"
@@ -19408,11 +19709,11 @@ const char* parse_type_annotation_ex(Parser* p, bool allow_or) {
 #line 196 "src/main.vl"
             if ((!parser_match(p, TOK_COMMA))) {
 #line 197 "src/main.vl"
-                goto __loop_break_200;
+                goto __loop_break_201;
             }
-            __loop_cont_200: __attribute__((unused));
+            __loop_cont_201: __attribute__((unused));
         }
-        __loop_break_200: __attribute__((unused));
+        __loop_break_201: __attribute__((unused));
 #line 200 "src/main.vl"
         parser_consume(p, TOK_RBRACKET, "Expected ']' after type arguments");
 #line 201 "src/main.vl"
@@ -19577,9 +19878,9 @@ ProgramNode* parse_program(Parser* p) {
         }
 #line 294 "src/main.vl"
         parser_skip_newlines(p);
-        __loop_cont_201: __attribute__((unused));
+        __loop_cont_202: __attribute__((unused));
     }
-    __loop_break_201: __attribute__((unused));
+    __loop_break_202: __attribute__((unused));
 #line 298 "src/main.vl"
     if ((p->first_anon != NULL)) {
 #line 299 "src/main.vl"
@@ -19643,9 +19944,9 @@ int32_t mono_find_char(const char* s, uint8_t c) {
         }
 #line 22 "src/main.vl"
         i += 1;
-        __loop_cont_202: __attribute__((unused));
+        __loop_cont_203: __attribute__((unused));
     }
-    __loop_break_202: __attribute__((unused));
+    __loop_break_203: __attribute__((unused));
 #line 24 "src/main.vl"
     return (-1);
 }
@@ -19665,18 +19966,18 @@ const char* mono_trim(const char* s) {
     for (int32_t it = 0; (((start < len) && (velo_cmp_eq_u_s(s[start], ' ') || velo_cmp_eq_u_s(s[start], '\t')))); it++) {
 #line 31 "src/main.vl"
         start += 1;
-        __loop_cont_203: __attribute__((unused));
+        __loop_cont_204: __attribute__((unused));
     }
-    __loop_break_203: __attribute__((unused));
+    __loop_break_204: __attribute__((unused));
 #line 32 "src/main.vl"
     size_t end = len;
 #line 33 "src/main.vl"
     for (int32_t it = 0; (((end > start) && (velo_cmp_eq_u_s(s[(end - 1)], ' ') || velo_cmp_eq_u_s(s[(end - 1)], '\t')))); it++) {
 #line 33 "src/main.vl"
         end -= 1;
-        __loop_cont_204: __attribute__((unused));
+        __loop_cont_205: __attribute__((unused));
     }
-    __loop_break_204: __attribute__((unused));
+    __loop_break_205: __attribute__((unused));
 #line 34 "src/main.vl"
     return copy_slice_to_string(s, start, (end - start));
 }
@@ -19716,13 +20017,13 @@ const char* mono_str_replace(const char* src, const char* target, const char* re
 #line 49 "src/main.vl"
                     matched = false;
 #line 49 "src/main.vl"
-                    goto __loop_break_206;
+                    goto __loop_break_207;
                 }
 #line 50 "src/main.vl"
                 j += 1;
-                __loop_cont_206: __attribute__((unused));
+                __loop_cont_207: __attribute__((unused));
             }
-            __loop_break_206: __attribute__((unused));
+            __loop_break_207: __attribute__((unused));
 #line 52 "src/main.vl"
             if (matched) {
 #line 53 "src/main.vl"
@@ -19730,16 +20031,16 @@ const char* mono_str_replace(const char* src, const char* target, const char* re
 #line 54 "src/main.vl"
                 i += tlen;
 #line 55 "src/main.vl"
-                goto __loop_cont_205;
+                goto __loop_cont_206;
             }
         }
 #line 58 "src/main.vl"
         sb_append_char((&(sb)), src[i]);
 #line 59 "src/main.vl"
         i += 1;
-        __loop_cont_205: __attribute__((unused));
+        __loop_cont_206: __attribute__((unused));
     }
-    __loop_break_205: __attribute__((unused));
+    __loop_break_206: __attribute__((unused));
 #line 61 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -19784,9 +20085,9 @@ const char* mono_mangle_type(const char* t) {
         }
 #line 80 "src/main.vl"
         i += 1;
-        __loop_cont_207: __attribute__((unused));
+        __loop_cont_208: __attribute__((unused));
     }
-    __loop_break_207: __attribute__((unused));
+    __loop_break_208: __attribute__((unused));
 #line 82 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -19806,9 +20107,9 @@ const char* mono_normalize_type(const char* t) {
     for (int32_t it = 0; (((at0 < len0) && velo_cmp_eq_u_s(t[at0], '@'))); it++) {
 #line 92 "src/main.vl"
         at0 += 1;
-        __loop_cont_208: __attribute__((unused));
+        __loop_cont_209: __attribute__((unused));
     }
-    __loop_break_208: __attribute__((unused));
+    __loop_break_209: __attribute__((unused));
 #line 93 "src/main.vl"
     if ((((((velo_cmp_eq_u_s(t[at0], 's') && (len0 >= (at0 + 5))) && velo_cmp_eq_u_s(t[(at0 + 1)], 'h')) && velo_cmp_eq_u_s(t[(at0 + 2)], 'e')) && velo_cmp_eq_u_s(t[(at0 + 3)], 'l')) && velo_cmp_eq_u_s(t[(at0 + 4)], 'f'))) {
 #line 93 "src/main.vl"
@@ -19847,9 +20148,9 @@ const char* mono_normalize_type(const char* t) {
     for (int32_t it = 0; (((at_count < len) && velo_cmp_eq_u_s(t[at_count], '@'))); it++) {
 #line 107 "src/main.vl"
         at_count += 1;
-        __loop_cont_209: __attribute__((unused));
+        __loop_cont_210: __attribute__((unused));
     }
-    __loop_break_209: __attribute__((unused));
+    __loop_break_210: __attribute__((unused));
 #line 108 "src/main.vl"
     bool has_bracket = false;
 #line 109 "src/main.vl"
@@ -19861,13 +20162,13 @@ const char* mono_normalize_type(const char* t) {
 #line 111 "src/main.vl"
             has_bracket = true;
 #line 111 "src/main.vl"
-            goto __loop_break_210;
+            goto __loop_break_211;
         }
 #line 112 "src/main.vl"
         k += 1;
-        __loop_cont_210: __attribute__((unused));
+        __loop_cont_211: __attribute__((unused));
     }
-    __loop_break_210: __attribute__((unused));
+    __loop_break_211: __attribute__((unused));
 #line 114 "src/main.vl"
     if ((!has_bracket)) {
 #line 114 "src/main.vl"
@@ -19892,9 +20193,9 @@ const char* mono_normalize_type(const char* t) {
         sb_append_char((&(sb)), '@');
 #line 120 "src/main.vl"
         j += 1;
-        __loop_cont_211: __attribute__((unused));
+        __loop_cont_212: __attribute__((unused));
     }
-    __loop_break_211: __attribute__((unused));
+    __loop_break_212: __attribute__((unused));
 #line 121 "src/main.vl"
     sb_append_str((&(sb)), mangled);
 #line 122 "src/main.vl"
@@ -19993,9 +20294,9 @@ const char* mono_strip_bounds(const char* params) {
         }
 #line 166 "src/main.vl"
         i += 1;
-        __loop_cont_212: __attribute__((unused));
+        __loop_cont_213: __attribute__((unused));
     }
-    __loop_break_212: __attribute__((unused));
+    __loop_break_213: __attribute__((unused));
 #line 168 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -20100,9 +20401,9 @@ StmtNode* mono_find_struct(Monomorphizer* m, const char* name) {
         }
 #line 96 "src/main.vl"
         cur = cur->next;
-        __loop_cont_213: __attribute__((unused));
+        __loop_cont_214: __attribute__((unused));
     }
-    __loop_break_213: __attribute__((unused));
+    __loop_break_214: __attribute__((unused));
 #line 98 "src/main.vl"
     return NULL;
 }
@@ -20120,9 +20421,9 @@ GenericTemplate* mono_find_template(Monomorphizer* m, const char* name) {
         }
 #line 105 "src/main.vl"
         cur = cur->next;
-        __loop_cont_214: __attribute__((unused));
+        __loop_cont_215: __attribute__((unused));
     }
-    __loop_break_214: __attribute__((unused));
+    __loop_break_215: __attribute__((unused));
 #line 107 "src/main.vl"
     return NULL;
 }
@@ -20140,9 +20441,9 @@ bool mono_is_instantiated(Monomorphizer* m, const char* mangled_name) {
         }
 #line 114 "src/main.vl"
         cur = cur->next;
-        __loop_cont_215: __attribute__((unused));
+        __loop_cont_216: __attribute__((unused));
     }
-    __loop_break_215: __attribute__((unused));
+    __loop_break_216: __attribute__((unused));
 #line 116 "src/main.vl"
     WorklistNode* w = m->worklist_head;
 #line 117 "src/main.vl"
@@ -20154,9 +20455,9 @@ bool mono_is_instantiated(Monomorphizer* m, const char* mangled_name) {
         }
 #line 119 "src/main.vl"
         w = w->next;
-        __loop_cont_216: __attribute__((unused));
+        __loop_cont_217: __attribute__((unused));
     }
-    __loop_break_216: __attribute__((unused));
+    __loop_break_217: __attribute__((unused));
 #line 121 "src/main.vl"
     return false;
 }
@@ -20209,9 +20510,9 @@ const char* mono_shelf_elem(const char* t) {
     for (int32_t it = 0; (((at < len) && velo_cmp_eq_u_s(t[at], '@'))); it++) {
 #line 147 "src/main.vl"
         at += 1;
-        __loop_cont_217: __attribute__((unused));
+        __loop_cont_218: __attribute__((unused));
     }
-    __loop_break_217: __attribute__((unused));
+    __loop_break_218: __attribute__((unused));
 #line 148 "src/main.vl"
     if (((((((len >= (at + 5)) && velo_cmp_eq_u_s(t[at], 'h')) && velo_cmp_eq_u_s(t[(at + 1)], 'e')) && velo_cmp_eq_u_s(t[(at + 2)], 'a')) && velo_cmp_eq_u_s(t[(at + 3)], 'p')) && velo_cmp_eq_u_s(t[(at + 4)], ' '))) {
 #line 148 "src/main.vl"
@@ -20253,9 +20554,9 @@ const char* mono_map_mapkey(const char* t) {
     for (int32_t it = 0; (((at < len) && velo_cmp_eq_u_s(t[at], '@'))); it++) {
 #line 163 "src/main.vl"
         at += 1;
-        __loop_cont_218: __attribute__((unused));
+        __loop_cont_219: __attribute__((unused));
     }
-    __loop_break_218: __attribute__((unused));
+    __loop_break_219: __attribute__((unused));
 #line 164 "src/main.vl"
     if (((((((len >= (at + 5)) && velo_cmp_eq_u_s(t[at], 'h')) && velo_cmp_eq_u_s(t[(at + 1)], 'e')) && velo_cmp_eq_u_s(t[(at + 2)], 'a')) && velo_cmp_eq_u_s(t[(at + 3)], 'p')) && velo_cmp_eq_u_s(t[(at + 4)], ' '))) {
 #line 164 "src/main.vl"
@@ -20308,9 +20609,9 @@ const char* mono_map_mapkey(const char* t) {
         }
 #line 177 "src/main.vl"
         i += 1;
-        __loop_cont_219: __attribute__((unused));
+        __loop_cont_220: __attribute__((unused));
     }
-    __loop_break_219: __attribute__((unused));
+    __loop_break_220: __attribute__((unused));
 #line 179 "src/main.vl"
     return NULL;
 }
@@ -20330,9 +20631,9 @@ const char* mono_map_value(const char* t) {
     for (int32_t it = 0; (((at < len) && velo_cmp_eq_u_s(t[at], '@'))); it++) {
 #line 187 "src/main.vl"
         at += 1;
-        __loop_cont_220: __attribute__((unused));
+        __loop_cont_221: __attribute__((unused));
     }
-    __loop_break_220: __attribute__((unused));
+    __loop_break_221: __attribute__((unused));
 #line 188 "src/main.vl"
     if (((((((len >= (at + 5)) && velo_cmp_eq_u_s(t[at], 'h')) && velo_cmp_eq_u_s(t[(at + 1)], 'e')) && velo_cmp_eq_u_s(t[(at + 2)], 'a')) && velo_cmp_eq_u_s(t[(at + 3)], 'p')) && velo_cmp_eq_u_s(t[(at + 4)], ' '))) {
 #line 188 "src/main.vl"
@@ -20383,9 +20684,9 @@ const char* mono_map_value(const char* t) {
         }
 #line 200 "src/main.vl"
         i += 1;
-        __loop_cont_221: __attribute__((unused));
+        __loop_cont_222: __attribute__((unused));
     }
-    __loop_break_221: __attribute__((unused));
+    __loop_break_222: __attribute__((unused));
 #line 202 "src/main.vl"
     return NULL;
 }
@@ -20416,9 +20717,9 @@ void mono_check_type(Monomorphizer* m, const char* t) {
     for (int32_t it = 0; (((at_count < ((usize)strlen(t))) && velo_cmp_eq_u_s(t[at_count], '@'))); it++) {
 #line 217 "src/main.vl"
         at_count += 1;
-        __loop_cont_222: __attribute__((unused));
+        __loop_cont_223: __attribute__((unused));
     }
-    __loop_break_222: __attribute__((unused));
+    __loop_break_223: __attribute__((unused));
 #line 218 "src/main.vl"
     const char* base = copy_slice_to_string(t, at_count, (((size_t)(bracket_pos)) - at_count));
 #line 219 "src/main.vl"
@@ -20488,9 +20789,9 @@ Symbol* scope_lookup_immediate(Scope* sc, const char* name) {
         }
 #line 30 "src/main.vl"
         cur = cur->next;
-        __loop_cont_223: __attribute__((unused));
+        __loop_cont_224: __attribute__((unused));
     }
-    __loop_break_223: __attribute__((unused));
+    __loop_break_224: __attribute__((unused));
 #line 32 "src/main.vl"
     return NULL;
 }
@@ -20510,9 +20811,9 @@ Symbol* scope_lookup(Scope* sc, const char* name) {
         }
 #line 41 "src/main.vl"
         cur_sc = cur_sc->parent;
-        __loop_cont_224: __attribute__((unused));
+        __loop_cont_225: __attribute__((unused));
     }
-    __loop_break_224: __attribute__((unused));
+    __loop_break_225: __attribute__((unused));
 #line 43 "src/main.vl"
     return NULL;
 }
@@ -20760,9 +21061,9 @@ bool struct_add_field(StructSym* st_sym, const char* fname, const char* ftype, b
         for (int32_t it = 0; ((cur->next != NULL)); it++) {
 #line 193 "src/main.vl"
             cur = cur->next;
-            __loop_cont_225: __attribute__((unused));
+            __loop_cont_226: __attribute__((unused));
         }
-        __loop_break_225: __attribute__((unused));
+        __loop_break_226: __attribute__((unused));
 #line 195 "src/main.vl"
         cur->next = f;
     }
@@ -20785,9 +21086,9 @@ StructSym* find_struct(SymbolTable* st, const char* name) {
         }
 #line 208 "src/main.vl"
         cur = cur->next;
-        __loop_cont_226: __attribute__((unused));
+        __loop_cont_227: __attribute__((unused));
     }
-    __loop_break_226: __attribute__((unused));
+    __loop_break_227: __attribute__((unused));
 #line 210 "src/main.vl"
     return NULL;
 }
@@ -20810,9 +21111,9 @@ StructFieldSym* find_struct_field(StructSym* st_sym, const char* fname) {
         }
 #line 221 "src/main.vl"
         cur = cur->next;
-        __loop_cont_227: __attribute__((unused));
+        __loop_cont_228: __attribute__((unused));
     }
-    __loop_break_227: __attribute__((unused));
+    __loop_break_228: __attribute__((unused));
 #line 223 "src/main.vl"
     return NULL;
 }
@@ -20871,9 +21172,9 @@ bool function_add_param(FunctionSym* fn_sym, const char* pname, const char* ptyp
         for (int32_t it = 0; ((cur->next != NULL)); it++) {
 #line 258 "src/main.vl"
             cur = cur->next;
-            __loop_cont_228: __attribute__((unused));
+            __loop_cont_229: __attribute__((unused));
         }
-        __loop_break_228: __attribute__((unused));
+        __loop_break_229: __attribute__((unused));
 #line 260 "src/main.vl"
         cur->next = p;
     }
@@ -20896,9 +21197,9 @@ FunctionSym* find_function(SymbolTable* st, const char* name) {
         }
 #line 273 "src/main.vl"
         cur = cur->next;
-        __loop_cont_229: __attribute__((unused));
+        __loop_cont_230: __attribute__((unused));
     }
-    __loop_break_229: __attribute__((unused));
+    __loop_break_230: __attribute__((unused));
 #line 275 "src/main.vl"
     return NULL;
 }
@@ -20962,9 +21263,9 @@ bool kind_add_variant(KindSym* k_sym, const char* name, int32_t disc, bool has_d
         for (int32_t it = 0; ((cur->next != NULL)); it++) {
 #line 310 "src/main.vl"
             cur = cur->next;
-            __loop_cont_230: __attribute__((unused));
+            __loop_cont_231: __attribute__((unused));
         }
-        __loop_break_230: __attribute__((unused));
+        __loop_break_231: __attribute__((unused));
 #line 311 "src/main.vl"
         cur->next = v;
     }
@@ -20992,9 +21293,9 @@ KindSym* find_kind(SymbolTable* st, const char* name) {
         }
 #line 323 "src/main.vl"
         cur = cur->next;
-        __loop_cont_231: __attribute__((unused));
+        __loop_cont_232: __attribute__((unused));
     }
-    __loop_break_231: __attribute__((unused));
+    __loop_break_232: __attribute__((unused));
 #line 325 "src/main.vl"
     return NULL;
 }
@@ -21017,9 +21318,9 @@ VariantSym* find_variant(KindSym* k_sym, const char* vname) {
         }
 #line 334 "src/main.vl"
         cur = cur->next;
-        __loop_cont_232: __attribute__((unused));
+        __loop_cont_233: __attribute__((unused));
     }
-    __loop_break_232: __attribute__((unused));
+    __loop_break_233: __attribute__((unused));
 #line 336 "src/main.vl"
     return NULL;
 }
@@ -21042,9 +21343,9 @@ KindSym* find_kind_by_variant(SymbolTable* st, const char* vname) {
         }
 #line 345 "src/main.vl"
         cur_k = cur_k->next;
-        __loop_cont_233: __attribute__((unused));
+        __loop_cont_234: __attribute__((unused));
     }
-    __loop_break_233: __attribute__((unused));
+    __loop_break_234: __attribute__((unused));
 #line 347 "src/main.vl"
     return NULL;
 }
@@ -21091,9 +21392,9 @@ PactSym* find_pact(SymbolTable* st, const char* name) {
         }
 #line 370 "src/main.vl"
         cur = cur->next;
-        __loop_cont_234: __attribute__((unused));
+        __loop_cont_235: __attribute__((unused));
     }
-    __loop_break_234: __attribute__((unused));
+    __loop_break_235: __attribute__((unused));
 #line 372 "src/main.vl"
     return NULL;
 }
@@ -21141,17 +21442,17 @@ const char* get_act_return_type(const char* name) {
             for (int32_t it = 0; (((start < len) && (velo_cmp_eq_u_s(clean[start], ' ') || velo_cmp_eq_u_s(clean[start], '\t')))); it++) {
 #line 27 "src/main.vl"
                 start += 1;
-                __loop_cont_236: __attribute__((unused));
+                __loop_cont_237: __attribute__((unused));
             }
-            __loop_break_236: __attribute__((unused));
+            __loop_break_237: __attribute__((unused));
 #line 29 "src/main.vl"
             return copy_slice_to_string(clean, start, (len - start));
         }
 #line 31 "src/main.vl"
         i += 1;
-        __loop_cont_235: __attribute__((unused));
+        __loop_cont_236: __attribute__((unused));
     }
-    __loop_break_235: __attribute__((unused));
+    __loop_break_236: __attribute__((unused));
 #line 33 "src/main.vl"
     return "void";
 }
@@ -21177,9 +21478,9 @@ const char* mangle_act_type(const char* t) {
     for (int32_t it = 0; (((i < len) && velo_cmp_ne_u_s(clean[i], '('))); it++) {
 #line 46 "src/main.vl"
         i += 1;
-        __loop_cont_237: __attribute__((unused));
+        __loop_cont_238: __attribute__((unused));
     }
-    __loop_break_237: __attribute__((unused));
+    __loop_break_238: __attribute__((unused));
 #line 47 "src/main.vl"
     if ((i >= len)) {
 #line 47 "src/main.vl"
@@ -21230,9 +21531,9 @@ const char* mangle_act_type(const char* t) {
         }
 #line 67 "src/main.vl"
         i += 1;
-        __loop_cont_238: __attribute__((unused));
+        __loop_cont_239: __attribute__((unused));
     }
-    __loop_break_238: __attribute__((unused));
+    __loop_break_239: __attribute__((unused));
 #line 69 "src/main.vl"
     if (((i < len) && velo_cmp_eq_u_s(clean[i], ')'))) {
 #line 69 "src/main.vl"
@@ -21244,9 +21545,9 @@ const char* mangle_act_type(const char* t) {
     for (int32_t it = 0; ((((i + 1) < len) && (!(velo_cmp_eq_u_s(clean[i], '-') && velo_cmp_eq_u_s(clean[(i + 1)], '>'))))); it++) {
 #line 75 "src/main.vl"
         i += 1;
-        __loop_cont_239: __attribute__((unused));
+        __loop_cont_240: __attribute__((unused));
     }
-    __loop_break_239: __attribute__((unused));
+    __loop_break_240: __attribute__((unused));
 #line 77 "src/main.vl"
     if (((i + 1) < len)) {
 #line 78 "src/main.vl"
@@ -21274,9 +21575,9 @@ const char* mangle_act_type(const char* t) {
         }
 #line 93 "src/main.vl"
         i += 1;
-        __loop_cont_240: __attribute__((unused));
+        __loop_cont_241: __attribute__((unused));
     }
-    __loop_break_240: __attribute__((unused));
+    __loop_break_241: __attribute__((unused));
 #line 96 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -21294,9 +21595,9 @@ bool act_types_contains(ActTypeNode* list, const char* type_name) {
         }
 #line 111 "src/main.vl"
         cur = cur->next;
-        __loop_cont_241: __attribute__((unused));
+        __loop_cont_242: __attribute__((unused));
     }
-    __loop_break_241: __attribute__((unused));
+    __loop_break_242: __attribute__((unused));
 #line 113 "src/main.vl"
     return false;
 }
@@ -21351,9 +21652,9 @@ const char* strip_type_spaces(const char* t) {
         }
 #line 140 "src/main.vl"
         i += 1;
-        __loop_cont_242: __attribute__((unused));
+        __loop_cont_243: __attribute__((unused));
     }
-    __loop_break_242: __attribute__((unused));
+    __loop_break_243: __attribute__((unused));
 #line 142 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -21405,9 +21706,9 @@ const char* make_ptr_type_str(const char* t) {
         buf[(i + 1)] = t[i];
 #line 25 "src/main.vl"
         i += 1;
-        __loop_cont_243: __attribute__((unused));
+        __loop_cont_244: __attribute__((unused));
     }
-    __loop_break_243: __attribute__((unused));
+    __loop_break_244: __attribute__((unused));
 #line 27 "src/main.vl"
     buf[(len + 1)] = ((uint8_t)(0));
 #line 28 "src/main.vl"
@@ -22031,7 +22332,7 @@ bool int_literal_exceeds_i64(const char* text) {
 #line 238 "src/main.vl"
         if ((!ok)) {
 #line 238 "src/main.vl"
-            goto __loop_break_244;
+            goto __loop_break_245;
         }
 #line 239 "src/main.vl"
         if (((velo_cmp_gt_u_s(digits, 0) || (hex && (d != 0))) || ((!hex) && velo_cmp_ne_u_s(c, '0')))) {
@@ -22045,9 +22346,9 @@ bool int_literal_exceeds_i64(const char* text) {
         }
 #line 243 "src/main.vl"
         at += 1;
-        __loop_cont_244: __attribute__((unused));
+        __loop_cont_245: __attribute__((unused));
     }
-    __loop_break_244: __attribute__((unused));
+    __loop_break_245: __attribute__((unused));
 #line 245 "src/main.vl"
     if (velo_cmp_eq_u_s(digits, 0)) {
 #line 245 "src/main.vl"
@@ -22091,9 +22392,9 @@ bool int_literal_exceeds_i64(const char* text) {
             }
 #line 259 "src/main.vl"
             i += 1;
-            __loop_cont_245: __attribute__((unused));
+            __loop_cont_246: __attribute__((unused));
         }
-        __loop_break_245: __attribute__((unused));
+        __loop_break_246: __attribute__((unused));
 #line 261 "src/main.vl"
         return true;
     }
@@ -22129,9 +22430,9 @@ bool int_literal_exceeds_i64(const char* text) {
         }
 #line 273 "src/main.vl"
         i += 1;
-        __loop_cont_246: __attribute__((unused));
+        __loop_cont_247: __attribute__((unused));
     }
-    __loop_break_246: __attribute__((unused));
+    __loop_break_247: __attribute__((unused));
 #line 275 "src/main.vl"
     return false;
 }
@@ -22153,7 +22454,7 @@ const char* shelf_literal_elem(SymbolTable* st, ExprNode* expr) {
             return expr->type_name;
         }
 #line 20 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, "cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])");
+        diag("VELO-E0018", expr->line, expr->col);
 #line 20 "src/main.vl"
         st->error_count += 1;
 #line 21 "src/main.vl"
@@ -22177,7 +22478,7 @@ const char* shelf_literal_elem(SymbolTable* st, ExprNode* expr) {
 #line 29 "src/main.vl"
     if (((elem != NULL && "@void" != NULL) ? (strcmp(elem, "@void") == 0) : (elem == "@void"))) {
 #line 30 "src/main.vl"
-        report_error("semantic", expr->first_arg->line, expr->first_arg->col, "shelf elements cannot be null (use a @T pointer element)");
+        diag("VELO-E0015", expr->first_arg->line, expr->first_arg->col);
 #line 30 "src/main.vl"
         st->error_count += 1;
 #line 31 "src/main.vl"
@@ -22215,7 +22516,7 @@ const char* shelf_literal_elem(SymbolTable* st, ExprNode* expr) {
 #line 50 "src/main.vl"
         if (((t != NULL && "@void" != NULL) ? (strcmp(t, "@void") == 0) : (t == "@void"))) {
 #line 51 "src/main.vl"
-            report_error("semantic", cur->line, cur->col, "shelf elements cannot be null (use a @T pointer element)");
+            diag("VELO-E0015", cur->line, cur->col);
 #line 51 "src/main.vl"
             st->error_count += 1;
 #line 52 "src/main.vl"
@@ -22248,9 +22549,9 @@ const char* shelf_literal_elem(SymbolTable* st, ExprNode* expr) {
         }
 #line 61 "src/main.vl"
         cur = cur->next;
-        __loop_cont_247: __attribute__((unused));
+        __loop_cont_248: __attribute__((unused));
     }
-    __loop_break_247: __attribute__((unused));
+    __loop_break_248: __attribute__((unused));
 #line 63 "src/main.vl"
     if ((!is_mixed)) {
 #line 64 "src/main.vl"
@@ -22339,9 +22640,9 @@ const char* shelf_literal_elem(SymbolTable* st, ExprNode* expr) {
         }
 #line 102 "src/main.vl"
         cur = cur->next;
-        __loop_cont_248: __attribute__((unused));
+        __loop_cont_249: __attribute__((unused));
     }
-    __loop_break_248: __attribute__((unused));
+    __loop_break_249: __attribute__((unused));
 #line 104 "src/main.vl"
     expr->type_name = "dyn";
 #line 104 "src/main.vl"
@@ -22490,34 +22791,34 @@ const char* shelf_root_binding_name(ExprNode* expr) {
 #line 68 "src/main.vl"
             cur = cur->target;
 #line 68 "src/main.vl"
-            goto __loop_cont_249;
+            goto __loop_cont_250;
         }
 #line 69 "src/main.vl"
         if ((cur->kind == EXPR_INDEX)) {
 #line 69 "src/main.vl"
             cur = cur->target;
 #line 69 "src/main.vl"
-            goto __loop_cont_249;
+            goto __loop_cont_250;
         }
 #line 70 "src/main.vl"
         if ((cur->kind == EXPR_CAST)) {
 #line 70 "src/main.vl"
             cur = cur->operand;
 #line 70 "src/main.vl"
-            goto __loop_cont_249;
+            goto __loop_cont_250;
         }
 #line 71 "src/main.vl"
         if (((cur->kind == EXPR_DEREF) || (cur->kind == EXPR_ADDRESS_OF))) {
 #line 71 "src/main.vl"
             cur = cur->operand;
 #line 71 "src/main.vl"
-            goto __loop_cont_249;
+            goto __loop_cont_250;
         }
 #line 72 "src/main.vl"
         return NULL;
-        __loop_cont_249: __attribute__((unused));
+        __loop_cont_250: __attribute__((unused));
     }
-    __loop_break_249: __attribute__((unused));
+    __loop_break_250: __attribute__((unused));
 #line 74 "src/main.vl"
     return NULL;
 }
@@ -22903,9 +23204,9 @@ void check_shelf_call_args(SymbolTable* st, ExprNode* expr, FunctionSym* fn_sym)
         cur_p = cur_p->next;
 #line 282 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_250: __attribute__((unused));
+        __loop_cont_251: __attribute__((unused));
     }
-    __loop_break_250: __attribute__((unused));
+    __loop_break_251: __attribute__((unused));
 }
 
 #line 10 "src/main.vl"
@@ -23386,7 +23687,7 @@ const char* check_coll9_literal_elem(SymbolTable* st, ExprNode* expr) {
             return expr->type_name;
         }
 #line 23 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, "cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])");
+        diag("VELO-E0019", expr->line, expr->col);
 #line 23 "src/main.vl"
         st->error_count += 1;
 #line 24 "src/main.vl"
@@ -23494,9 +23795,9 @@ const char* check_coll9_literal_elem(SymbolTable* st, ExprNode* expr) {
         }
 #line 66 "src/main.vl"
         cur = cur->next;
-        __loop_cont_251: __attribute__((unused));
+        __loop_cont_252: __attribute__((unused));
     }
-    __loop_break_251: __attribute__((unused));
+    __loop_break_252: __attribute__((unused));
 #line 68 "src/main.vl"
     if ((!is_mixed)) {
 #line 69 "src/main.vl"
@@ -23799,9 +24100,9 @@ size_t map_comma_pos(const char* clean, size_t len) {
         }
 #line 34 "src/main.vl"
         i += 1;
-        __loop_cont_252: __attribute__((unused));
+        __loop_cont_253: __attribute__((unused));
     }
-    __loop_break_252: __attribute__((unused));
+    __loop_break_253: __attribute__((unused));
 #line 36 "src/main.vl"
     return len;
 }
@@ -23862,18 +24163,18 @@ const char* map_key_type(const char* type_name) {
     for (int32_t it = 0; (((kstart < comma) && velo_cmp_eq_u_s(clean[kstart], ' '))); it++) {
 #line 58 "src/main.vl"
         kstart += 1;
-        __loop_cont_253: __attribute__((unused));
+        __loop_cont_254: __attribute__((unused));
     }
-    __loop_break_253: __attribute__((unused));
+    __loop_break_254: __attribute__((unused));
 #line 59 "src/main.vl"
     size_t kstop = comma;
 #line 59 "src/main.vl"
     for (int32_t it = 0; (((kstop > kstart) && velo_cmp_eq_u_s(clean[(kstop - 1)], ' '))); it++) {
 #line 59 "src/main.vl"
         kstop -= 1;
-        __loop_cont_254: __attribute__((unused));
+        __loop_cont_255: __attribute__((unused));
     }
-    __loop_break_254: __attribute__((unused));
+    __loop_break_255: __attribute__((unused));
 #line 60 "src/main.vl"
     if ((kstop == kstart)) {
 #line 60 "src/main.vl"
@@ -23917,18 +24218,18 @@ const char* map_value_type(const char* type_name) {
     for (int32_t it = 0; (((vstart < (len - 1)) && velo_cmp_eq_u_s(clean[vstart], ' '))); it++) {
 #line 73 "src/main.vl"
         vstart += 1;
-        __loop_cont_255: __attribute__((unused));
+        __loop_cont_256: __attribute__((unused));
     }
-    __loop_break_255: __attribute__((unused));
+    __loop_break_256: __attribute__((unused));
 #line 74 "src/main.vl"
     size_t vstop = (len - 1);
 #line 74 "src/main.vl"
     for (int32_t it = 0; (((vstop > vstart) && velo_cmp_eq_u_s(clean[(vstop - 1)], ' '))); it++) {
 #line 74 "src/main.vl"
         vstop -= 1;
-        __loop_cont_256: __attribute__((unused));
+        __loop_cont_257: __attribute__((unused));
     }
-    __loop_break_256: __attribute__((unused));
+    __loop_break_257: __attribute__((unused));
 #line 75 "src/main.vl"
     if ((vstop == vstart)) {
 #line 75 "src/main.vl"
@@ -24034,664 +24335,681 @@ const char* map_fail(SymbolTable* st, ExprNode* node, int32_t line, int32_t col,
     return "unknown";
 }
 
+#line 38 "src/main.vl"
+const char* map_fail_code(SymbolTable* st, ExprNode* node, int32_t line, int32_t col, const char* code) {
 #line 39 "src/main.vl"
+    diag(code, line, col);
+#line 40 "src/main.vl"
+    st->error_count += 1;
+#line 41 "src/main.vl"
+    if ((node != NULL)) {
+#line 41 "src/main.vl"
+        node->type_name = "unknown";
+#line 41 "src/main.vl"
+        node->bool_val = true;
+    }
+#line 42 "src/main.vl"
+    return "unknown";
+}
+
+#line 46 "src/main.vl"
 void check_map_mut_binding(SymbolTable* st, ExprNode* receiver, const char* verb, const char* word) {
-#line 40 "src/main.vl"
+#line 47 "src/main.vl"
     if ((receiver == NULL)) {
-#line 40 "src/main.vl"
+#line 47 "src/main.vl"
         return;
     }
-#line 41 "src/main.vl"
+#line 48 "src/main.vl"
     const char* root = shelf_root_binding_name(receiver);
-#line 42 "src/main.vl"
+#line 49 "src/main.vl"
     if ((root != NULL)) {
-#line 43 "src/main.vl"
+#line 50 "src/main.vl"
         Symbol* sym = resolve_variable(st, root);
-#line 44 "src/main.vl"
+#line 51 "src/main.vl"
         if (((sym != NULL) && (!sym->is_mut))) {
-#line 45 "src/main.vl"
+#line 52 "src/main.vl"
             report_error("semantic", receiver->line, receiver->col, map_join5("cannot ", verb, " ", word, " a map held by a let (declare with mut)"));
-#line 45 "src/main.vl"
+#line 52 "src/main.vl"
             st->error_count += 1;
         }
     }
 }
 
-#line 54 "src/main.vl"
+#line 61 "src/main.vl"
 const char* map_literal_kv(SymbolTable* st, ExprNode* expr) {
-#line 55 "src/main.vl"
+#line 62 "src/main.vl"
     if (expr->bool_val) {
-#line 55 "src/main.vl"
+#line 62 "src/main.vl"
         return expr->type_name;
     }
-#line 56 "src/main.vl"
+#line 63 "src/main.vl"
     if (velo_cmp_eq_u_s(expr->arg_count, 0)) {
-#line 57 "src/main.vl"
+#line 64 "src/main.vl"
         if (((expr->type_name != NULL) && velo_cmp_gt_u_s(((usize)strlen(expr->type_name)), 0))) {
-#line 57 "src/main.vl"
+#line 64 "src/main.vl"
             expr->bool_val = true;
-#line 57 "src/main.vl"
+#line 64 "src/main.vl"
             return expr->type_name;
         }
-#line 58 "src/main.vl"
+#line 65 "src/main.vl"
         if ((expr->kind == EXPR_HEAP_MAP_LIT)) {
-#line 59 "src/main.vl"
+#line 66 "src/main.vl"
             map_fail(st, expr, expr->line, expr->col, "cannot infer key and value types of empty map literal — annotate it (e.g. let m: heap Map[i32, string] = heap map[])");
         } else {
-#line 61 "src/main.vl"
+#line 68 "src/main.vl"
             map_fail(st, expr, expr->line, expr->col, "cannot infer key and value types of empty map literal — annotate it (e.g. let m: Map[i32, string] = map[])");
         }
-#line 63 "src/main.vl"
+#line 70 "src/main.vl"
         return "unknown";
     }
-#line 65 "src/main.vl"
+#line 72 "src/main.vl"
     const char* k0 = infer_expr_type(st, expr->first_arg);
-#line 66 "src/main.vl"
+#line 73 "src/main.vl"
     if (((k0 != NULL && "unknown" != NULL) ? (strcmp(k0, "unknown") == 0) : (k0 == "unknown"))) {
-#line 66 "src/main.vl"
+#line 73 "src/main.vl"
         return map_fail(st, expr, expr->line, expr->col, NULL);
     }
-#line 67 "src/main.vl"
+#line 74 "src/main.vl"
     if ((!is_map_key_family(k0))) {
-#line 67 "src/main.vl"
+#line 74 "src/main.vl"
         return map_fail(st, expr, expr->first_arg->line, expr->first_arg->col, map_key_family_error_text(k0));
     }
-#line 68 "src/main.vl"
+#line 75 "src/main.vl"
     const char* v0 = infer_expr_type(st, expr->first_arg->next);
-#line 69 "src/main.vl"
+#line 76 "src/main.vl"
     if (((v0 != NULL && "unknown" != NULL) ? (strcmp(v0, "unknown") == 0) : (v0 == "unknown"))) {
-#line 69 "src/main.vl"
+#line 76 "src/main.vl"
         return map_fail(st, expr, expr->line, expr->col, NULL);
     }
-#line 70 "src/main.vl"
+#line 77 "src/main.vl"
     if (((v0 != NULL && "@void" != NULL) ? (strcmp(v0, "@void") == 0) : (v0 == "@void"))) {
-#line 70 "src/main.vl"
-        return map_fail(st, expr, expr->first_arg->next->line, expr->first_arg->next->col, "map values cannot be null (use a @T pointer value)");
+#line 77 "src/main.vl"
+        return map_fail_code(st, expr, expr->first_arg->next->line, expr->first_arg->next->col, "VELO-E0017");
     }
-#line 71 "src/main.vl"
+#line 78 "src/main.vl"
     ExprNode* cur = expr->first_arg->next->next;
-#line 71 "src/main.vl"
+#line 78 "src/main.vl"
     bool expect_key = true;
-#line 72 "src/main.vl"
+#line 79 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 73 "src/main.vl"
+#line 80 "src/main.vl"
         if (expect_key) {
-#line 74 "src/main.vl"
+#line 81 "src/main.vl"
             const char* k_t = infer_expr_type(st, cur);
-#line 75 "src/main.vl"
+#line 82 "src/main.vl"
             if ((((k_t != NULL && "unknown" != NULL) ? (strcmp(k_t, "unknown") != 0) : (k_t != "unknown")) && ((k_t != NULL && k0 != NULL) ? (strcmp(k_t, k0) != 0) : (k_t != k0)))) {
-#line 75 "src/main.vl"
+#line 82 "src/main.vl"
                 return map_fail(st, expr, cur->line, cur->col, map_join5("map literal key types differ: ", k0, " vs ", k_t, ""));
             }
         }
-#line 77 "src/main.vl"
-        expect_key = (!expect_key);
-#line 77 "src/main.vl"
-        cur = cur->next;
-        __loop_cont_257: __attribute__((unused));
-    }
-    __loop_break_257: __attribute__((unused));
-#line 79 "src/main.vl"
-    bool is_mixed = false;
-#line 79 "src/main.vl"
-    bool all_numeric = true;
-#line 79 "src/main.vl"
-    bool has_float = false;
-#line 79 "src/main.vl"
-    const char* second = "";
-#line 80 "src/main.vl"
-    if ((is_dyn_int_family(v0) || is_dyn_float_family(v0))) {
-#line 80 "src/main.vl"
-        if (is_dyn_float_family(v0)) {
-#line 80 "src/main.vl"
-            has_float = true;
-        }
-    } else {
-#line 80 "src/main.vl"
-        all_numeric = false;
-    }
-#line 81 "src/main.vl"
-    cur = expr->first_arg->next->next;
-#line 81 "src/main.vl"
-    expect_key = true;
-#line 82 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 83 "src/main.vl"
-        if ((!expect_key)) {
 #line 84 "src/main.vl"
-            const char* t = infer_expr_type(st, cur);
-#line 85 "src/main.vl"
-            if (((t != NULL && "unknown" != NULL) ? (strcmp(t, "unknown") == 0) : (t == "unknown"))) {
-#line 85 "src/main.vl"
-                return map_fail(st, expr, cur->line, cur->col, NULL);
-            }
-#line 86 "src/main.vl"
-            if (((t != NULL && "@void" != NULL) ? (strcmp(t, "@void") == 0) : (t == "@void"))) {
-#line 86 "src/main.vl"
-                return map_fail(st, expr, cur->line, cur->col, "map values cannot be null (use a @T pointer value)");
-            }
-#line 87 "src/main.vl"
-            if (((t != NULL && v0 != NULL) ? (strcmp(t, v0) != 0) : (t != v0))) {
-#line 87 "src/main.vl"
-                is_mixed = true;
-#line 87 "src/main.vl"
-                if (velo_cmp_eq_u_s(((usize)strlen(second)), 0)) {
-#line 87 "src/main.vl"
-                    second = t;
-                }
-            }
-#line 88 "src/main.vl"
-            if ((is_dyn_int_family(t) || is_dyn_float_family(t))) {
-#line 88 "src/main.vl"
-                if (is_dyn_float_family(t)) {
-#line 88 "src/main.vl"
-                    has_float = true;
-                }
-            } else {
-#line 88 "src/main.vl"
-                all_numeric = false;
-            }
-        }
-#line 90 "src/main.vl"
         expect_key = (!expect_key);
-#line 90 "src/main.vl"
+#line 84 "src/main.vl"
         cur = cur->next;
         __loop_cont_258: __attribute__((unused));
     }
     __loop_break_258: __attribute__((unused));
-#line 92 "src/main.vl"
-    const char* hpfx = "Map[";
-#line 93 "src/main.vl"
-    if ((expr->kind == EXPR_HEAP_MAP_LIT)) {
-#line 93 "src/main.vl"
-        hpfx = "heap Map[";
-    }
-#line 94 "src/main.vl"
-    if ((!is_mixed)) {
-#line 94 "src/main.vl"
-        expr->type_name = map_join5(hpfx, k0, ", ", v0, "]");
-#line 94 "src/main.vl"
-        expr->bool_val = true;
-#line 94 "src/main.vl"
-        return expr->type_name;
-    }
-#line 95 "src/main.vl"
-    if (all_numeric) {
-#line 96 "src/main.vl"
-        if (has_float) {
-#line 96 "src/main.vl"
-            expr->type_name = map_join5(hpfx, k0, ", ", "f64", "]");
-#line 96 "src/main.vl"
-            expr->bool_val = true;
-#line 96 "src/main.vl"
-            return expr->type_name;
+#line 86 "src/main.vl"
+    bool is_mixed = false;
+#line 86 "src/main.vl"
+    bool all_numeric = true;
+#line 86 "src/main.vl"
+    bool has_float = false;
+#line 86 "src/main.vl"
+    const char* second = "";
+#line 87 "src/main.vl"
+    if ((is_dyn_int_family(v0) || is_dyn_float_family(v0))) {
+#line 87 "src/main.vl"
+        if (is_dyn_float_family(v0)) {
+#line 87 "src/main.vl"
+            has_float = true;
         }
-#line 97 "src/main.vl"
-        return map_fail(st, expr, expr->line, expr->col, map_join5("map literal value types differ: ", v0, " vs ", second, ""));
+    } else {
+#line 87 "src/main.vl"
+        all_numeric = false;
     }
-#line 99 "src/main.vl"
-    const char* err0 = dyn_boxable_error(v0);
-#line 100 "src/main.vl"
-    if ((err0 != NULL)) {
-#line 100 "src/main.vl"
-        return map_fail(st, expr, expr->first_arg->next->line, expr->first_arg->next->col, err0);
-    }
-#line 101 "src/main.vl"
+#line 88 "src/main.vl"
     cur = expr->first_arg->next->next;
-#line 101 "src/main.vl"
+#line 88 "src/main.vl"
     expect_key = true;
-#line 102 "src/main.vl"
+#line 89 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 103 "src/main.vl"
+#line 90 "src/main.vl"
         if ((!expect_key)) {
-#line 104 "src/main.vl"
+#line 91 "src/main.vl"
             const char* t = infer_expr_type(st, cur);
-#line 105 "src/main.vl"
+#line 92 "src/main.vl"
             if (((t != NULL && "unknown" != NULL) ? (strcmp(t, "unknown") == 0) : (t == "unknown"))) {
-#line 105 "src/main.vl"
+#line 92 "src/main.vl"
                 return map_fail(st, expr, cur->line, cur->col, NULL);
             }
-#line 106 "src/main.vl"
-            const char* err = dyn_boxable_error(t);
-#line 107 "src/main.vl"
-            if ((err != NULL)) {
-#line 107 "src/main.vl"
-                return map_fail(st, expr, cur->line, cur->col, err);
+#line 93 "src/main.vl"
+            if (((t != NULL && "@void" != NULL) ? (strcmp(t, "@void") == 0) : (t == "@void"))) {
+#line 93 "src/main.vl"
+                return map_fail_code(st, expr, cur->line, cur->col, "VELO-E0017");
+            }
+#line 94 "src/main.vl"
+            if (((t != NULL && v0 != NULL) ? (strcmp(t, v0) != 0) : (t != v0))) {
+#line 94 "src/main.vl"
+                is_mixed = true;
+#line 94 "src/main.vl"
+                if (velo_cmp_eq_u_s(((usize)strlen(second)), 0)) {
+#line 94 "src/main.vl"
+                    second = t;
+                }
+            }
+#line 95 "src/main.vl"
+            if ((is_dyn_int_family(t) || is_dyn_float_family(t))) {
+#line 95 "src/main.vl"
+                if (is_dyn_float_family(t)) {
+#line 95 "src/main.vl"
+                    has_float = true;
+                }
+            } else {
+#line 95 "src/main.vl"
+                all_numeric = false;
             }
         }
-#line 109 "src/main.vl"
+#line 97 "src/main.vl"
         expect_key = (!expect_key);
-#line 109 "src/main.vl"
+#line 97 "src/main.vl"
         cur = cur->next;
         __loop_cont_259: __attribute__((unused));
     }
     __loop_break_259: __attribute__((unused));
+#line 99 "src/main.vl"
+    const char* hpfx = "Map[";
+#line 100 "src/main.vl"
+    if ((expr->kind == EXPR_HEAP_MAP_LIT)) {
+#line 100 "src/main.vl"
+        hpfx = "heap Map[";
+    }
+#line 101 "src/main.vl"
+    if ((!is_mixed)) {
+#line 101 "src/main.vl"
+        expr->type_name = map_join5(hpfx, k0, ", ", v0, "]");
+#line 101 "src/main.vl"
+        expr->bool_val = true;
+#line 101 "src/main.vl"
+        return expr->type_name;
+    }
+#line 102 "src/main.vl"
+    if (all_numeric) {
+#line 103 "src/main.vl"
+        if (has_float) {
+#line 103 "src/main.vl"
+            expr->type_name = map_join5(hpfx, k0, ", ", "f64", "]");
+#line 103 "src/main.vl"
+            expr->bool_val = true;
+#line 103 "src/main.vl"
+            return expr->type_name;
+        }
+#line 104 "src/main.vl"
+        return map_fail(st, expr, expr->line, expr->col, map_join5("map literal value types differ: ", v0, " vs ", second, ""));
+    }
+#line 106 "src/main.vl"
+    const char* err0 = dyn_boxable_error(v0);
+#line 107 "src/main.vl"
+    if ((err0 != NULL)) {
+#line 107 "src/main.vl"
+        return map_fail(st, expr, expr->first_arg->next->line, expr->first_arg->next->col, err0);
+    }
+#line 108 "src/main.vl"
+    cur = expr->first_arg->next->next;
+#line 108 "src/main.vl"
+    expect_key = true;
+#line 109 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 110 "src/main.vl"
+        if ((!expect_key)) {
 #line 111 "src/main.vl"
-    expr->type_name = map_join5(hpfx, k0, ", ", "dyn", "]");
-#line 111 "src/main.vl"
-    expr->bool_val = true;
+            const char* t = infer_expr_type(st, cur);
 #line 112 "src/main.vl"
+            if (((t != NULL && "unknown" != NULL) ? (strcmp(t, "unknown") == 0) : (t == "unknown"))) {
+#line 112 "src/main.vl"
+                return map_fail(st, expr, cur->line, cur->col, NULL);
+            }
+#line 113 "src/main.vl"
+            const char* err = dyn_boxable_error(t);
+#line 114 "src/main.vl"
+            if ((err != NULL)) {
+#line 114 "src/main.vl"
+                return map_fail(st, expr, cur->line, cur->col, err);
+            }
+        }
+#line 116 "src/main.vl"
+        expect_key = (!expect_key);
+#line 116 "src/main.vl"
+        cur = cur->next;
+        __loop_cont_260: __attribute__((unused));
+    }
+    __loop_break_260: __attribute__((unused));
+#line 118 "src/main.vl"
+    expr->type_name = map_join5(hpfx, k0, ", ", "dyn", "]");
+#line 118 "src/main.vl"
+    expr->bool_val = true;
+#line 119 "src/main.vl"
     return expr->type_name;
 }
 
-#line 116 "src/main.vl"
+#line 123 "src/main.vl"
 const char* map_inferred_type(SymbolTable* st, ExprNode* expr) {
-#line 117 "src/main.vl"
+#line 124 "src/main.vl"
     return map_literal_kv(st, expr);
 }
 
-#line 121 "src/main.vl"
+#line 128 "src/main.vl"
 const char* check_map_member_access(SymbolTable* st, ExprNode* expr) {
-#line 122 "src/main.vl"
+#line 129 "src/main.vl"
     if (((expr->member_name != NULL && "len" != NULL) ? (strcmp(expr->member_name, "len") == 0) : (expr->member_name == "len"))) {
-#line 122 "src/main.vl"
+#line 129 "src/main.vl"
         return "usize";
     }
-#line 123 "src/main.vl"
+#line 130 "src/main.vl"
     return map_fail(st, expr, expr->line, expr->col, map_join5("unknown map member '", expr->member_name, "' (put, get, has, len, get_or, take, free, destroy are available)", "", ""));
 }
 
-#line 127 "src/main.vl"
+#line 134 "src/main.vl"
 const char* check_map_index_read(SymbolTable* st, ExprNode* expr) {
-#line 128 "src/main.vl"
+#line 135 "src/main.vl"
     const char* recv_t = infer_expr_type(st, expr->target);
-#line 129 "src/main.vl"
+#line 136 "src/main.vl"
     const char* k_t = map_checked_key(st, map_key_type(recv_t), expr->target->line, expr->target->col);
-#line 130 "src/main.vl"
+#line 137 "src/main.vl"
     if ((k_t == NULL)) {
-#line 130 "src/main.vl"
+#line 137 "src/main.vl"
         return "unknown";
     }
-#line 131 "src/main.vl"
+#line 138 "src/main.vl"
     const char* got = infer_expr_type(st, expr->index);
-#line 132 "src/main.vl"
+#line 139 "src/main.vl"
     if (((got != NULL && k_t != NULL) ? (strcmp(got, k_t) != 0) : (got != k_t))) {
-#line 132 "src/main.vl"
+#line 139 "src/main.vl"
         return map_fail(st, expr, expr->index->line, expr->index->col, map_join5("map key mismatch: expected ", k_t, " (got ", got, ")"));
     }
-#line 133 "src/main.vl"
+#line 140 "src/main.vl"
     return map_value_type(recv_t);
 }
 
-#line 137 "src/main.vl"
-void check_map_value_slot(SymbolTable* st, ExprNode* val_node, const char* v_t) {
-#line 138 "src/main.vl"
-    if ((v_t == NULL)) {
-#line 138 "src/main.vl"
-        return;
-    }
-#line 139 "src/main.vl"
-    const char* got = infer_expr_type(st, val_node);
-#line 140 "src/main.vl"
-    if (((v_t != NULL && "dyn" != NULL) ? (strcmp(v_t, "dyn") == 0) : (v_t == "dyn"))) {
-#line 141 "src/main.vl"
-        if ((((got != NULL && "unknown" != NULL) ? (strcmp(got, "unknown") == 0) : (got == "unknown")) || ((got != NULL && "dyn" != NULL) ? (strcmp(got, "dyn") == 0) : (got == "dyn")))) {
-#line 141 "src/main.vl"
-            return;
-        }
-#line 142 "src/main.vl"
-        if (((got != NULL && "void" != NULL) ? (strcmp(got, "void") == 0) : (got == "void"))) {
-#line 142 "src/main.vl"
-            report_error("semantic", val_node->line, val_node->col, "shelf[dyn] put: cannot box a void value");
-#line 142 "src/main.vl"
-            st->error_count += 1;
-#line 142 "src/main.vl"
-            return;
-        }
-#line 143 "src/main.vl"
-        if (((got != NULL && "@void" != NULL) ? (strcmp(got, "@void") == 0) : (got == "@void"))) {
-#line 143 "src/main.vl"
-            report_error("semantic", val_node->line, val_node->col, "map values cannot be null (use a @T pointer value)");
-#line 143 "src/main.vl"
-            st->error_count += 1;
-#line 143 "src/main.vl"
-            return;
-        }
 #line 144 "src/main.vl"
-        const char* err = dyn_boxable_error(got);
+void check_map_value_slot(SymbolTable* st, ExprNode* val_node, const char* v_t) {
 #line 145 "src/main.vl"
-        if ((err != NULL)) {
+    if ((v_t == NULL)) {
 #line 145 "src/main.vl"
-            report_error("semantic", val_node->line, val_node->col, err);
-#line 145 "src/main.vl"
-            st->error_count += 1;
-        }
-#line 146 "src/main.vl"
         return;
     }
+#line 146 "src/main.vl"
+    const char* got = infer_expr_type(st, val_node);
+#line 147 "src/main.vl"
+    if (((v_t != NULL && "dyn" != NULL) ? (strcmp(v_t, "dyn") == 0) : (v_t == "dyn"))) {
 #line 148 "src/main.vl"
+        if ((((got != NULL && "unknown" != NULL) ? (strcmp(got, "unknown") == 0) : (got == "unknown")) || ((got != NULL && "dyn" != NULL) ? (strcmp(got, "dyn") == 0) : (got == "dyn")))) {
+#line 148 "src/main.vl"
+            return;
+        }
+#line 149 "src/main.vl"
+        if (((got != NULL && "void" != NULL) ? (strcmp(got, "void") == 0) : (got == "void"))) {
+#line 149 "src/main.vl"
+            diag("VELO-E0016", val_node->line, val_node->col);
+#line 149 "src/main.vl"
+            st->error_count += 1;
+#line 149 "src/main.vl"
+            return;
+        }
+#line 150 "src/main.vl"
+        if (((got != NULL && "@void" != NULL) ? (strcmp(got, "@void") == 0) : (got == "@void"))) {
+#line 150 "src/main.vl"
+            diag("VELO-E0017", val_node->line, val_node->col);
+#line 150 "src/main.vl"
+            st->error_count += 1;
+#line 150 "src/main.vl"
+            return;
+        }
+#line 151 "src/main.vl"
+        const char* err = dyn_boxable_error(got);
+#line 152 "src/main.vl"
+        if ((err != NULL)) {
+#line 152 "src/main.vl"
+            report_error("semantic", val_node->line, val_node->col, err);
+#line 152 "src/main.vl"
+            st->error_count += 1;
+        }
+#line 153 "src/main.vl"
+        return;
+    }
+#line 155 "src/main.vl"
     if (((got != NULL && v_t != NULL) ? (strcmp(got, v_t) != 0) : (got != v_t))) {
-#line 149 "src/main.vl"
+#line 156 "src/main.vl"
         report_error("semantic", val_node->line, val_node->col, map_join5("map value mismatch: expected ", v_t, " (got ", got, ")"));
-#line 149 "src/main.vl"
+#line 156 "src/main.vl"
         st->error_count += 1;
     }
 }
 
-#line 154 "src/main.vl"
+#line 161 "src/main.vl"
 void check_map_assign(SymbolTable* st, StmtNode* stmt) {
-#line 155 "src/main.vl"
-    if ((stmt->op != TOK_ASSIGN)) {
-#line 155 "src/main.vl"
-        report_error("semantic", stmt->line, stmt->col, "compound assignments on maps are not supported yet — use an explicit '=' write");
-#line 155 "src/main.vl"
-        st->error_count += 1;
-#line 155 "src/main.vl"
-        return;
-    }
-#line 156 "src/main.vl"
-    check_map_mut_binding(st, stmt->expr->target, "write", "into");
-#line 157 "src/main.vl"
-    const char* recv_t = infer_expr_type(st, stmt->expr->target);
-#line 158 "src/main.vl"
-    const char* k_t = map_checked_key(st, map_key_type(recv_t), stmt->expr->target->line, stmt->expr->target->col);
-#line 159 "src/main.vl"
-    if ((k_t == NULL)) {
-#line 159 "src/main.vl"
-        return;
-    }
-#line 160 "src/main.vl"
-    const char* got_key = infer_expr_type(st, stmt->expr->index);
-#line 161 "src/main.vl"
-    if (((got_key != NULL && k_t != NULL) ? (strcmp(got_key, k_t) != 0) : (got_key != k_t))) {
-#line 161 "src/main.vl"
-        report_error("semantic", stmt->expr->index->line, stmt->expr->index->col, map_join5("map key mismatch: expected ", k_t, " (got ", got_key, ")"));
-#line 161 "src/main.vl"
-        st->error_count += 1;
-#line 161 "src/main.vl"
-        return;
-    }
 #line 162 "src/main.vl"
+    if ((stmt->op != TOK_ASSIGN)) {
+#line 162 "src/main.vl"
+        report_error("semantic", stmt->line, stmt->col, "compound assignments on maps are not supported yet — use an explicit '=' write");
+#line 162 "src/main.vl"
+        st->error_count += 1;
+#line 162 "src/main.vl"
+        return;
+    }
+#line 163 "src/main.vl"
+    check_map_mut_binding(st, stmt->expr->target, "write", "into");
+#line 164 "src/main.vl"
+    const char* recv_t = infer_expr_type(st, stmt->expr->target);
+#line 165 "src/main.vl"
+    const char* k_t = map_checked_key(st, map_key_type(recv_t), stmt->expr->target->line, stmt->expr->target->col);
+#line 166 "src/main.vl"
+    if ((k_t == NULL)) {
+#line 166 "src/main.vl"
+        return;
+    }
+#line 167 "src/main.vl"
+    const char* got_key = infer_expr_type(st, stmt->expr->index);
+#line 168 "src/main.vl"
+    if (((got_key != NULL && k_t != NULL) ? (strcmp(got_key, k_t) != 0) : (got_key != k_t))) {
+#line 168 "src/main.vl"
+        report_error("semantic", stmt->expr->index->line, stmt->expr->index->col, map_join5("map key mismatch: expected ", k_t, " (got ", got_key, ")"));
+#line 168 "src/main.vl"
+        st->error_count += 1;
+#line 168 "src/main.vl"
+        return;
+    }
+#line 169 "src/main.vl"
     check_map_value_slot(st, stmt->val_expr, map_value_type(recv_t));
 }
 
-#line 166 "src/main.vl"
+#line 173 "src/main.vl"
 const char* check_map_member_call(SymbolTable* st, ExprNode* expr) {
-#line 167 "src/main.vl"
+#line 174 "src/main.vl"
     const char* member = expr->callee->member_name;
-#line 168 "src/main.vl"
+#line 175 "src/main.vl"
     const char* recv_t = infer_expr_type(st, expr->callee->target);
-#line 169 "src/main.vl"
+#line 176 "src/main.vl"
     if (((((((((member != NULL && "put" != NULL) ? (strcmp(member, "put") != 0) : (member != "put")) && ((member != NULL && "get" != NULL) ? (strcmp(member, "get") != 0) : (member != "get"))) && ((member != NULL && "has" != NULL) ? (strcmp(member, "has") != 0) : (member != "has"))) && ((member != NULL && "get_or" != NULL) ? (strcmp(member, "get_or") != 0) : (member != "get_or"))) && ((member != NULL && "take" != NULL) ? (strcmp(member, "take") != 0) : (member != "take"))) && ((member != NULL && "free" != NULL) ? (strcmp(member, "free") != 0) : (member != "free"))) && ((member != NULL && "destroy" != NULL) ? (strcmp(member, "destroy") != 0) : (member != "destroy")))) {
-#line 170 "src/main.vl"
+#line 177 "src/main.vl"
         return map_fail(st, expr, expr->line, expr->col, map_join5("unknown map member '", member, "' (put, get, has, len, get_or, take, free, destroy are available)", "", ""));
     }
-#line 172 "src/main.vl"
+#line 179 "src/main.vl"
     if ((((member != NULL && "free" != NULL) ? (strcmp(member, "free") == 0) : (member == "free")) || ((member != NULL && "destroy" != NULL) ? (strcmp(member, "destroy") == 0) : (member == "destroy")))) {
-#line 173 "src/main.vl"
+#line 180 "src/main.vl"
         if (velo_cmp_ne_u_s(expr->arg_count, 0)) {
-#line 173 "src/main.vl"
+#line 180 "src/main.vl"
             return map_fail(st, expr, expr->line, expr->col, map_join5("map.", member, " takes no arguments", "", ""));
         }
-#line 174 "src/main.vl"
+#line 181 "src/main.vl"
         check_map_mut_binding(st, expr->callee->target, member, "from");
-#line 175 "src/main.vl"
-        return "void";
-    }
-#line 177 "src/main.vl"
-    if (((member != NULL && "put" != NULL) ? (strcmp(member, "put") == 0) : (member == "put"))) {
-#line 177 "src/main.vl"
-        if (velo_cmp_ne_u_s(expr->arg_count, 2)) {
-#line 177 "src/main.vl"
-            return map_fail(st, expr, expr->line, expr->col, "map.put expects exactly 2 arguments: (map m, key, value)");
-        }
-    } else
-#line 178 "src/main.vl"
-    if (((member != NULL && "get_or" != NULL) ? (strcmp(member, "get_or") == 0) : (member == "get_or"))) {
-#line 178 "src/main.vl"
-        if (velo_cmp_ne_u_s(expr->arg_count, 2)) {
-#line 178 "src/main.vl"
-            return map_fail(st, expr, expr->line, expr->col, "map.get_or expects exactly 2 arguments: (map m, key, default)");
-        }
-    } else {
-#line 179 "src/main.vl"
-        if (velo_cmp_ne_u_s(expr->arg_count, 1)) {
-#line 179 "src/main.vl"
-            return map_fail(st, expr, expr->line, expr->col, map_join5("map.", member, " expects exactly 1 argument: (map m, key)", "", ""));
-        }
-    }
-#line 180 "src/main.vl"
-    const char* k_t = map_checked_key(st, map_key_type(recv_t), expr->callee->target->line, expr->callee->target->col);
-#line 181 "src/main.vl"
-    if ((k_t == NULL)) {
-#line 181 "src/main.vl"
-        return "unknown";
-    }
 #line 182 "src/main.vl"
-    const char* got_key = infer_expr_type(st, expr->first_arg);
-#line 183 "src/main.vl"
-    if (((got_key != NULL && k_t != NULL) ? (strcmp(got_key, k_t) != 0) : (got_key != k_t))) {
-#line 183 "src/main.vl"
-        return map_fail(st, expr, expr->first_arg->line, expr->first_arg->col, map_join5("map key mismatch: expected ", k_t, " (got ", got_key, ")"));
+        return "void";
     }
 #line 184 "src/main.vl"
     if (((member != NULL && "put" != NULL) ? (strcmp(member, "put") == 0) : (member == "put"))) {
+#line 184 "src/main.vl"
+        if (velo_cmp_ne_u_s(expr->arg_count, 2)) {
+#line 184 "src/main.vl"
+            return map_fail(st, expr, expr->line, expr->col, "map.put expects exactly 2 arguments: (map m, key, value)");
+        }
+    } else
 #line 185 "src/main.vl"
-        check_map_value_slot(st, expr->first_arg->next, map_value_type(recv_t));
+    if (((member != NULL && "get_or" != NULL) ? (strcmp(member, "get_or") == 0) : (member == "get_or"))) {
+#line 185 "src/main.vl"
+        if (velo_cmp_ne_u_s(expr->arg_count, 2)) {
+#line 185 "src/main.vl"
+            return map_fail(st, expr, expr->line, expr->col, "map.get_or expects exactly 2 arguments: (map m, key, default)");
+        }
+    } else {
 #line 186 "src/main.vl"
-        check_map_mut_binding(st, expr->callee->target, "put", "into");
+        if (velo_cmp_ne_u_s(expr->arg_count, 1)) {
+#line 186 "src/main.vl"
+            return map_fail(st, expr, expr->line, expr->col, map_join5("map.", member, " expects exactly 1 argument: (map m, key)", "", ""));
+        }
+    }
 #line 187 "src/main.vl"
+    const char* k_t = map_checked_key(st, map_key_type(recv_t), expr->callee->target->line, expr->callee->target->col);
+#line 188 "src/main.vl"
+    if ((k_t == NULL)) {
+#line 188 "src/main.vl"
+        return "unknown";
+    }
+#line 189 "src/main.vl"
+    const char* got_key = infer_expr_type(st, expr->first_arg);
+#line 190 "src/main.vl"
+    if (((got_key != NULL && k_t != NULL) ? (strcmp(got_key, k_t) != 0) : (got_key != k_t))) {
+#line 190 "src/main.vl"
+        return map_fail(st, expr, expr->first_arg->line, expr->first_arg->col, map_join5("map key mismatch: expected ", k_t, " (got ", got_key, ")"));
+    }
+#line 191 "src/main.vl"
+    if (((member != NULL && "put" != NULL) ? (strcmp(member, "put") == 0) : (member == "put"))) {
+#line 192 "src/main.vl"
+        check_map_value_slot(st, expr->first_arg->next, map_value_type(recv_t));
+#line 193 "src/main.vl"
+        check_map_mut_binding(st, expr->callee->target, "put", "into");
+#line 194 "src/main.vl"
         return "void";
     }
-#line 189 "src/main.vl"
+#line 196 "src/main.vl"
     if (((member != NULL && "get_or" != NULL) ? (strcmp(member, "get_or") == 0) : (member == "get_or"))) {
-#line 189 "src/main.vl"
+#line 196 "src/main.vl"
         check_map_value_slot(st, expr->first_arg->next, map_value_type(recv_t));
-#line 189 "src/main.vl"
+#line 196 "src/main.vl"
         return map_value_type(recv_t);
     }
-#line 190 "src/main.vl"
+#line 197 "src/main.vl"
     if (((member != NULL && "take" != NULL) ? (strcmp(member, "take") == 0) : (member == "take"))) {
-#line 190 "src/main.vl"
+#line 197 "src/main.vl"
         check_map_mut_binding(st, expr->callee->target, "take", "from");
-#line 190 "src/main.vl"
+#line 197 "src/main.vl"
         return map_value_type(recv_t);
     }
-#line 191 "src/main.vl"
+#line 198 "src/main.vl"
     if (((member != NULL && "get" != NULL) ? (strcmp(member, "get") == 0) : (member == "get"))) {
-#line 191 "src/main.vl"
+#line 198 "src/main.vl"
         return map_value_type(recv_t);
     }
-#line 192 "src/main.vl"
+#line 199 "src/main.vl"
     return "bool";
 }
 
-#line 196 "src/main.vl"
-void check_map_annotation(SymbolTable* st, const char* decl_t, ExprNode* val, int32_t line, int32_t col) {
-#line 197 "src/main.vl"
-    if (((val == NULL) || ((val->kind != EXPR_MAP_LIT) && (val->kind != EXPR_HEAP_MAP_LIT)))) {
-#line 197 "src/main.vl"
-        return;
-    }
-#line 198 "src/main.vl"
-    const char* clean = strip_pointer_prefix(decl_t);
-#line 199 "src/main.vl"
-    bool ann_is_heap = starts_with_heap_map(clean);
-#line 200 "src/main.vl"
-    if (((!ann_is_heap) && ((((((clean == NULL) || velo_cmp_lt_u_s(((usize)strlen(clean)), 5)) || velo_cmp_ne_u_s(clean[0], 'M')) || velo_cmp_ne_u_s(clean[1], 'a')) || velo_cmp_ne_u_s(clean[2], 'p')) || velo_cmp_ne_u_s(clean[3], '[')))) {
-#line 200 "src/main.vl"
-        return;
-    }
-#line 201 "src/main.vl"
-    if ((!map_has_slots(clean))) {
-#line 201 "src/main.vl"
-        return;
-    }
-#line 202 "src/main.vl"
-    if ((map_checked_key(st, map_key_type(clean), line, col) == NULL)) {
-#line 202 "src/main.vl"
-        map_fail(st, val, line, col, NULL);
-#line 202 "src/main.vl"
-        return;
-    }
 #line 203 "src/main.vl"
-    bool lit_is_heap = (val->kind == EXPR_HEAP_MAP_LIT);
+void check_map_annotation(SymbolTable* st, const char* decl_t, ExprNode* val, int32_t line, int32_t col) {
 #line 204 "src/main.vl"
-    if ((ann_is_heap != lit_is_heap)) {
+    if (((val == NULL) || ((val->kind != EXPR_MAP_LIT) && (val->kind != EXPR_HEAP_MAP_LIT)))) {
+#line 204 "src/main.vl"
+        return;
+    }
 #line 205 "src/main.vl"
-        const char* lit_full = "";
+    const char* clean = strip_pointer_prefix(decl_t);
 #line 206 "src/main.vl"
-        if (velo_cmp_gt_u_s(val->arg_count, 0)) {
-#line 206 "src/main.vl"
-            lit_full = map_literal_kv(st, val);
-        } else
-#line 206 "src/main.vl"
-        if (lit_is_heap) {
-#line 206 "src/main.vl"
-            lit_full = "heap map[]";
-        } else {
-#line 206 "src/main.vl"
-            lit_full = "map[]";
-        }
+    bool ann_is_heap = starts_with_heap_map(clean);
 #line 207 "src/main.vl"
-        report_error("semantic", line, col, map_join5("map literal type ", lit_full, " does not match annotation ", decl_t, ""));
+    if (((!ann_is_heap) && ((((((clean == NULL) || velo_cmp_lt_u_s(((usize)strlen(clean)), 5)) || velo_cmp_ne_u_s(clean[0], 'M')) || velo_cmp_ne_u_s(clean[1], 'a')) || velo_cmp_ne_u_s(clean[2], 'p')) || velo_cmp_ne_u_s(clean[3], '[')))) {
 #line 207 "src/main.vl"
-        st->error_count += 1;
+        return;
+    }
+#line 208 "src/main.vl"
+    if ((!map_has_slots(clean))) {
 #line 208 "src/main.vl"
         return;
     }
-#line 210 "src/main.vl"
-    if (velo_cmp_eq_u_s(val->arg_count, 0)) {
-#line 210 "src/main.vl"
-        val->type_name = decl_t;
-#line 210 "src/main.vl"
+#line 209 "src/main.vl"
+    if ((map_checked_key(st, map_key_type(clean), line, col) == NULL)) {
+#line 209 "src/main.vl"
+        map_fail(st, val, line, col, NULL);
+#line 209 "src/main.vl"
         return;
     }
+#line 210 "src/main.vl"
+    bool lit_is_heap = (val->kind == EXPR_HEAP_MAP_LIT);
 #line 211 "src/main.vl"
-    const char* lit_kv = map_literal_kv(st, val);
+    if ((ann_is_heap != lit_is_heap)) {
 #line 212 "src/main.vl"
-    if ((((lit_kv != NULL && "unknown" != NULL) ? (strcmp(lit_kv, "unknown") == 0) : (lit_kv == "unknown")) || (lit_kv == NULL))) {
-#line 212 "src/main.vl"
+        const char* lit_full = "";
+#line 213 "src/main.vl"
+        if (velo_cmp_gt_u_s(val->arg_count, 0)) {
+#line 213 "src/main.vl"
+            lit_full = map_literal_kv(st, val);
+        } else
+#line 213 "src/main.vl"
+        if (lit_is_heap) {
+#line 213 "src/main.vl"
+            lit_full = "heap map[]";
+        } else {
+#line 213 "src/main.vl"
+            lit_full = "map[]";
+        }
+#line 214 "src/main.vl"
+        report_error("semantic", line, col, map_join5("map literal type ", lit_full, " does not match annotation ", decl_t, ""));
+#line 214 "src/main.vl"
+        st->error_count += 1;
+#line 215 "src/main.vl"
         return;
     }
-#line 213 "src/main.vl"
+#line 217 "src/main.vl"
+    if (velo_cmp_eq_u_s(val->arg_count, 0)) {
+#line 217 "src/main.vl"
+        val->type_name = decl_t;
+#line 217 "src/main.vl"
+        return;
+    }
+#line 218 "src/main.vl"
+    const char* lit_kv = map_literal_kv(st, val);
+#line 219 "src/main.vl"
+    if ((((lit_kv != NULL && "unknown" != NULL) ? (strcmp(lit_kv, "unknown") == 0) : (lit_kv == "unknown")) || (lit_kv == NULL))) {
+#line 219 "src/main.vl"
+        return;
+    }
+#line 220 "src/main.vl"
     if (((lit_kv != NULL && decl_t != NULL) ? (strcmp(lit_kv, decl_t) != 0) : (lit_kv != decl_t))) {
-#line 214 "src/main.vl"
+#line 221 "src/main.vl"
         report_error("semantic", line, col, map_join5("map literal type ", lit_kv, " does not match annotation ", decl_t, ""));
-#line 214 "src/main.vl"
+#line 221 "src/main.vl"
         st->error_count += 1;
     }
 }
 
-#line 219 "src/main.vl"
+#line 226 "src/main.vl"
 void pin_empty_map_return(SymbolTable* st, ExprNode* val, const char* ret_t) {
-#line 220 "src/main.vl"
+#line 227 "src/main.vl"
     if ((((val == NULL) || ((val->kind != EXPR_MAP_LIT) && (val->kind != EXPR_HEAP_MAP_LIT))) || velo_cmp_ne_u_s(val->arg_count, 0))) {
-#line 220 "src/main.vl"
+#line 227 "src/main.vl"
         return;
     }
-#line 221 "src/main.vl"
+#line 228 "src/main.vl"
     if (((ret_t == NULL) || (!map_has_slots(ret_t)))) {
-#line 221 "src/main.vl"
+#line 228 "src/main.vl"
         return;
     }
-#line 222 "src/main.vl"
+#line 229 "src/main.vl"
     if ((map_checked_key(st, map_key_type(ret_t), val->line, val->col) == NULL)) {
-#line 222 "src/main.vl"
+#line 229 "src/main.vl"
         map_fail(st, val, val->line, val->col, NULL);
-#line 222 "src/main.vl"
+#line 229 "src/main.vl"
         return;
     }
-#line 223 "src/main.vl"
+#line 230 "src/main.vl"
     val->type_name = ret_t;
 }
 
-#line 227 "src/main.vl"
-const char* check_map_module_call(SymbolTable* st, ExprNode* expr, const char* member) {
-#line 228 "src/main.vl"
-    if ((((member != NULL && "destroy" != NULL) ? (strcmp(member, "destroy") != 0) : (member != "destroy")) && ((member != NULL && "free" != NULL) ? (strcmp(member, "free") != 0) : (member != "free")))) {
-#line 229 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, map_join5("unknown map function '", member, "' (destroy, free are available)", "", ""));
-#line 229 "src/main.vl"
-        st->error_count += 1;
-#line 229 "src/main.vl"
-        return "unknown";
-    }
-#line 231 "src/main.vl"
-    if (velo_cmp_ne_u_s(expr->arg_count, 1)) {
-#line 232 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, map_join5("map.", member, " expects exactly 1 argument: (map m)", "", ""));
-#line 232 "src/main.vl"
-        st->error_count += 1;
-#line 232 "src/main.vl"
-        return "unknown";
-    }
 #line 234 "src/main.vl"
-    const char* arg_t = infer_expr_type(st, expr->first_arg);
+const char* check_map_module_call(SymbolTable* st, ExprNode* expr, const char* member) {
 #line 235 "src/main.vl"
-    if ((!is_map_type(arg_t))) {
+    if ((((member != NULL && "destroy" != NULL) ? (strcmp(member, "destroy") != 0) : (member != "destroy")) && ((member != NULL && "free" != NULL) ? (strcmp(member, "free") != 0) : (member != "free")))) {
 #line 236 "src/main.vl"
-        report_error("semantic", expr->first_arg->line, expr->first_arg->col, map_join5("map.", member, " argument must be a map (got ", arg_t, ")"));
+        report_error("semantic", expr->line, expr->col, map_join5("unknown map function '", member, "' (destroy, free are available)", "", ""));
 #line 236 "src/main.vl"
         st->error_count += 1;
 #line 236 "src/main.vl"
         return "unknown";
     }
 #line 238 "src/main.vl"
-    check_map_mut_binding(st, expr->first_arg, member, "from");
+    if (velo_cmp_ne_u_s(expr->arg_count, 1)) {
 #line 239 "src/main.vl"
+        report_error("semantic", expr->line, expr->col, map_join5("map.", member, " expects exactly 1 argument: (map m)", "", ""));
+#line 239 "src/main.vl"
+        st->error_count += 1;
+#line 239 "src/main.vl"
+        return "unknown";
+    }
+#line 241 "src/main.vl"
+    const char* arg_t = infer_expr_type(st, expr->first_arg);
+#line 242 "src/main.vl"
+    if ((!is_map_type(arg_t))) {
+#line 243 "src/main.vl"
+        report_error("semantic", expr->first_arg->line, expr->first_arg->col, map_join5("map.", member, " argument must be a map (got ", arg_t, ")"));
+#line 243 "src/main.vl"
+        st->error_count += 1;
+#line 243 "src/main.vl"
+        return "unknown";
+    }
+#line 245 "src/main.vl"
+    check_map_mut_binding(st, expr->first_arg, member, "from");
+#line 246 "src/main.vl"
     return "void";
 }
 
-#line 243 "src/main.vl"
+#line 250 "src/main.vl"
 void check_map_call_args(SymbolTable* st, ExprNode* expr, FunctionSym* fn_sym) {
-#line 244 "src/main.vl"
+#line 251 "src/main.vl"
     ParamSym* cur_p = fn_sym->first_param;
-#line 244 "src/main.vl"
+#line 251 "src/main.vl"
     ExprNode* cur_a = expr->first_arg;
-#line 245 "src/main.vl"
+#line 252 "src/main.vl"
     for (int32_t it = 0; (((cur_p != NULL) && (cur_a != NULL))); it++) {
-#line 246 "src/main.vl"
+#line 253 "src/main.vl"
         const char* want = cur_p->type_name;
-#line 247 "src/main.vl"
+#line 254 "src/main.vl"
         if (is_map_type(want)) {
-#line 248 "src/main.vl"
+#line 255 "src/main.vl"
             const char* got = infer_expr_type(st, cur_a);
-#line 249 "src/main.vl"
+#line 256 "src/main.vl"
             if ((is_map_type(got) && ((got != NULL && want != NULL) ? (strcmp(got, want) != 0) : (got != want)))) {
-#line 250 "src/main.vl"
+#line 257 "src/main.vl"
                 report_error("semantic", expr->line, expr->col, map_join5("map argument types must match exactly: got ", got, ", expected ", want, ""));
-#line 250 "src/main.vl"
+#line 257 "src/main.vl"
                 st->error_count += 1;
             }
         }
-#line 253 "src/main.vl"
+#line 260 "src/main.vl"
         cur_p = cur_p->next;
-#line 253 "src/main.vl"
+#line 260 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_260: __attribute__((unused));
+        __loop_cont_261: __attribute__((unused));
     }
-    __loop_break_260: __attribute__((unused));
+    __loop_break_261: __attribute__((unused));
 }
 
-#line 258 "src/main.vl"
+#line 265 "src/main.vl"
 const char* check_map_loop_keys(SymbolTable* st, StmtNode* stmt) {
-#line 259 "src/main.vl"
+#line 266 "src/main.vl"
     const char* coll_t = infer_expr_type(st, stmt->expr);
-#line 260 "src/main.vl"
+#line 267 "src/main.vl"
     const char* k_t = map_checked_key(st, map_key_type(coll_t), stmt->line, stmt->col);
-#line 261 "src/main.vl"
+#line 268 "src/main.vl"
     if ((k_t != NULL)) {
-#line 261 "src/main.vl"
+#line 268 "src/main.vl"
         return k_t;
     }
-#line 262 "src/main.vl"
+#line 269 "src/main.vl"
     return map_fail(st, stmt->expr, stmt->line, stmt->col, map_join3("the 'of' source of a loop must be a shelf, map, or ring (got ", coll_t, ")"));
 }
 
-#line 266 "src/main.vl"
+#line 273 "src/main.vl"
 const char* check_map_loop_source(SymbolTable* st, StmtNode* stmt) {
-#line 267 "src/main.vl"
+#line 274 "src/main.vl"
     if (is_map_type(infer_expr_type(st, stmt->expr))) {
-#line 267 "src/main.vl"
+#line 274 "src/main.vl"
         return check_map_loop_keys(st, stmt);
     }
-#line 268 "src/main.vl"
+#line 275 "src/main.vl"
     if (is_ring_type(infer_expr_type(st, stmt->expr))) {
-#line 268 "src/main.vl"
+#line 275 "src/main.vl"
         return check_ring_loop_elem(st, stmt);
     }
-#line 269 "src/main.vl"
+#line 276 "src/main.vl"
     return check_shelf_loop_elem(st, stmt);
 }
 
@@ -25198,9 +25516,9 @@ bool stmt_unconditionally_exits(StmtNode* stmt) {
             }
 #line 19 "src/main.vl"
             cur = cur->next;
-            __loop_cont_261: __attribute__((unused));
+            __loop_cont_262: __attribute__((unused));
         }
-        __loop_break_261: __attribute__((unused));
+        __loop_break_262: __attribute__((unused));
     }
 #line 22 "src/main.vl"
     if (((stmt->kind == STMT_IF) && (stmt->else_branch != NULL))) {
@@ -25312,9 +25630,9 @@ const char* infer_tuple_lit(SymbolTable* st, ExprNode* expr) {
         count += 1;
 #line 27 "src/main.vl"
         cur = cur->next;
-        __loop_cont_262: __attribute__((unused));
+        __loop_cont_263: __attribute__((unused));
     }
-    __loop_break_262: __attribute__((unused));
+    __loop_break_263: __attribute__((unused));
 #line 29 "src/main.vl"
     sb_append_char((&(sb)), ')');
 #line 30 "src/main.vl"
@@ -25363,13 +25681,13 @@ const char* check_tuple_member_access(SymbolTable* st, ExprNode* expr, const cha
 #line 55 "src/main.vl"
             valid_num = false;
 #line 56 "src/main.vl"
-            goto __loop_break_263;
+            goto __loop_break_264;
         }
 #line 58 "src/main.vl"
         i += 1;
-        __loop_cont_263: __attribute__((unused));
+        __loop_cont_264: __attribute__((unused));
     }
-    __loop_break_263: __attribute__((unused));
+    __loop_break_264: __attribute__((unused));
 #line 60 "src/main.vl"
     if (((!valid_num) || (i == start_idx))) {
 #line 61 "src/main.vl"
@@ -25394,7 +25712,7 @@ const char* check_tuple_member_access(SymbolTable* st, ExprNode* expr, const cha
 #line 71 "src/main.vl"
         StringBuilder msg = create_sb(64);
 #line 72 "src/main.vl"
-        sb_append_str((&(msg)), "Tuple index out of bounds: requested index ");
+        sb_append_str((&(msg)), "requested index ");
 #line 73 "src/main.vl"
         sb_append_str((&(msg)), mname);
 #line 74 "src/main.vl"
@@ -25404,7 +25722,7 @@ const char* check_tuple_member_access(SymbolTable* st, ExprNode* expr, const cha
 #line 76 "src/main.vl"
         sb_append_str((&(msg)), " elements");
 #line 77 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, sb_to_string((&(msg))));
+        diag_arg("VELO-E0013", expr->line, expr->col, sb_to_string((&(msg))));
 #line 78 "src/main.vl"
         st->error_count += 1;
 #line 79 "src/main.vl"
@@ -25503,9 +25821,9 @@ void check_destructure_stmt(SymbolTable* st, StmtNode* stmt) {
         idx += 1;
 #line 130 "src/main.vl"
         cur_param = cur_param->next;
-        __loop_cont_264: __attribute__((unused));
+        __loop_cont_265: __attribute__((unused));
     }
-    __loop_break_264: __attribute__((unused));
+    __loop_break_265: __attribute__((unused));
 }
 
 #line 12 "src/main.vl"
@@ -25532,9 +25850,9 @@ const char* privacy_path_basename(const char* p) {
 #line 21 "src/main.vl"
             return copy_slice_to_string(p, start, blen);
         }
-        __loop_cont_265: __attribute__((unused));
+        __loop_cont_266: __attribute__((unused));
     }
-    __loop_break_265: __attribute__((unused));
+    __loop_break_266: __attribute__((unused));
 #line 24 "src/main.vl"
     return p;
 }
@@ -25585,9 +25903,9 @@ StmtNode* find_file_import(SymbolTable* st, const char* importer, const char* ta
         }
 #line 49 "src/main.vl"
         cur = cur->next_use;
-        __loop_cont_266: __attribute__((unused));
+        __loop_cont_267: __attribute__((unused));
     }
-    __loop_break_266: __attribute__((unused));
+    __loop_break_267: __attribute__((unused));
 #line 51 "src/main.vl"
     return NULL;
 }
@@ -25613,9 +25931,9 @@ StmtNode* find_module_alias(SymbolTable* st, const char* importer, const char* a
         }
 #line 64 "src/main.vl"
         cur = cur->next_use;
-        __loop_cont_267: __attribute__((unused));
+        __loop_cont_268: __attribute__((unused));
     }
-    __loop_break_267: __attribute__((unused));
+    __loop_break_268: __attribute__((unused));
 #line 66 "src/main.vl"
     return NULL;
 }
@@ -25644,15 +25962,15 @@ const char* resolve_import_rename(SymbolTable* st, const char* importer, const c
                 }
 #line 80 "src/main.vl"
                 item = item->next;
-                __loop_cont_269: __attribute__((unused));
+                __loop_cont_270: __attribute__((unused));
             }
-            __loop_break_269: __attribute__((unused));
+            __loop_break_270: __attribute__((unused));
         }
 #line 83 "src/main.vl"
         cur = cur->next_use;
-        __loop_cont_268: __attribute__((unused));
+        __loop_cont_269: __attribute__((unused));
     }
-    __loop_break_268: __attribute__((unused));
+    __loop_break_269: __attribute__((unused));
 #line 85 "src/main.vl"
     return local_name;
 }
@@ -25695,9 +26013,9 @@ bool is_in_import_list(ImportItem* first_item, const char* sym_name, const char*
         }
 #line 105 "src/main.vl"
         item = item->next;
-        __loop_cont_270: __attribute__((unused));
+        __loop_cont_271: __attribute__((unused));
     }
-    __loop_break_270: __attribute__((unused));
+    __loop_break_271: __attribute__((unused));
 #line 107 "src/main.vl"
     return false;
 }
@@ -25728,9 +26046,9 @@ FunctionSym* find_function_in_module(SymbolTable* st, StmtNode* mod_use, const c
         }
 #line 123 "src/main.vl"
         cur = cur->next;
-        __loop_cont_271: __attribute__((unused));
+        __loop_cont_272: __attribute__((unused));
     }
-    __loop_break_271: __attribute__((unused));
+    __loop_break_272: __attribute__((unused));
 #line 125 "src/main.vl"
     return NULL;
 }
@@ -25761,9 +26079,9 @@ StructSym* find_struct_in_module(SymbolTable* st, StmtNode* mod_use, const char*
         }
 #line 141 "src/main.vl"
         cur = cur->next;
-        __loop_cont_272: __attribute__((unused));
+        __loop_cont_273: __attribute__((unused));
     }
-    __loop_break_272: __attribute__((unused));
+    __loop_break_273: __attribute__((unused));
 #line 143 "src/main.vl"
     return NULL;
 }
@@ -25794,9 +26112,9 @@ Symbol* find_global_in_module(SymbolTable* st, StmtNode* mod_use, const char* na
         }
 #line 159 "src/main.vl"
         cur = cur->next;
-        __loop_cont_273: __attribute__((unused));
+        __loop_cont_274: __attribute__((unused));
     }
-    __loop_break_273: __attribute__((unused));
+    __loop_break_274: __attribute__((unused));
 #line 161 "src/main.vl"
     return NULL;
 }
@@ -25968,9 +26286,9 @@ bool is_compiler_file(const char* f) {
         }
 #line 252 "src/main.vl"
         i += 1;
-        __loop_cont_274: __attribute__((unused));
+        __loop_cont_275: __attribute__((unused));
     }
-    __loop_break_274: __attribute__((unused));
+    __loop_break_275: __attribute__((unused));
 #line 254 "src/main.vl"
     return false;
 }
@@ -26290,7 +26608,7 @@ uint64_t parse_u64_checked(const char* s, bool* out_overflow) {
 #line 52 "src/main.vl"
             if ((!valid)) {
 #line 52 "src/main.vl"
-                goto __loop_break_275;
+                goto __loop_break_276;
             }
 #line 53 "src/main.vl"
             if (((base == ((uint64_t)(10))) && ((res > 1844674407370955161ULL) || ((res == 1844674407370955161ULL) && (d > ((uint64_t)(5))))))) {
@@ -26325,9 +26643,9 @@ uint64_t parse_u64_checked(const char* s, bool* out_overflow) {
 #line 63 "src/main.vl"
             i += 1;
         }
-        __loop_cont_275: __attribute__((unused));
+        __loop_cont_276: __attribute__((unused));
     }
-    __loop_break_275: __attribute__((unused));
+    __loop_break_276: __attribute__((unused));
 #line 66 "src/main.vl"
     return res;
 }
@@ -26819,7 +27137,7 @@ const char* check_struct_literal(SymbolTable* st, ExprNode* expr) {
 #line 285 "src/main.vl"
     if ((st_sym == NULL)) {
 #line 286 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, "Instantiating unknown struct type");
+        diag("VELO-E0007", expr->line, expr->col);
 #line 287 "src/main.vl"
         st->error_count += 1;
 #line 288 "src/main.vl"
@@ -26836,7 +27154,7 @@ const char* check_struct_literal(SymbolTable* st, ExprNode* expr) {
 #line 294 "src/main.vl"
         if ((f_sym == NULL)) {
 #line 295 "src/main.vl"
-            report_error("semantic", cur_init->line, cur_init->col, "Unknown field in struct literal");
+            diag("VELO-E0008", cur_init->line, cur_init->col);
 #line 296 "src/main.vl"
             st->error_count += 1;
         } else {
@@ -26872,9 +27190,9 @@ const char* check_struct_literal(SymbolTable* st, ExprNode* expr) {
         }
 #line 314 "src/main.vl"
         cur_init = cur_init->next;
-        __loop_cont_276: __attribute__((unused));
+        __loop_cont_277: __attribute__((unused));
     }
-    __loop_break_276: __attribute__((unused));
+    __loop_break_277: __attribute__((unused));
 #line 316 "src/main.vl"
     StructFieldSym* sf = st_sym->first_field;
 #line 317 "src/main.vl"
@@ -26892,21 +27210,21 @@ const char* check_struct_literal(SymbolTable* st, ExprNode* expr) {
             }
 #line 322 "src/main.vl"
             seen_init = seen_init->next;
-            __loop_cont_278: __attribute__((unused));
+            __loop_cont_279: __attribute__((unused));
         }
-        __loop_break_278: __attribute__((unused));
+        __loop_break_279: __attribute__((unused));
 #line 324 "src/main.vl"
         if (((!covered) && (!sf->has_default))) {
 #line 325 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "Struct literal is missing field with no default");
+            diag("VELO-E0009", expr->line, expr->col);
 #line 326 "src/main.vl"
             st->error_count += 1;
         }
 #line 328 "src/main.vl"
         sf = sf->next;
-        __loop_cont_277: __attribute__((unused));
+        __loop_cont_278: __attribute__((unused));
     }
-    __loop_break_277: __attribute__((unused));
+    __loop_break_278: __attribute__((unused));
 #line 330 "src/main.vl"
     return resolved_name;
 }
@@ -26979,9 +27297,9 @@ void adapt_and_check_call_args(SymbolTable* st, ExprNode* expr, ParamSym* first_
         cur_a = cur_a->next;
 #line 367 "src/main.vl"
         cur_p = cur_p->next;
-        __loop_cont_279: __attribute__((unused));
+        __loop_cont_280: __attribute__((unused));
     }
-    __loop_break_279: __attribute__((unused));
+    __loop_break_280: __attribute__((unused));
 }
 
 #line 372 "src/main.vl"
@@ -27553,7 +27871,7 @@ const char* check_range_loop(SymbolTable* st, StmtNode* stmt) {
 #line 282 "src/main.vl"
         if (is_range_step_non_positive(stmt->loop_step)) {
 #line 283 "src/main.vl"
-            report_error("semantic", stmt->loop_step->line, stmt->loop_step->col, "Range loop step must be greater than zero");
+            diag("VELO-E0014", stmt->loop_step->line, stmt->loop_step->col);
 #line 284 "src/main.vl"
             st->error_count += 1;
         }
@@ -27623,9 +27941,9 @@ bool defer_body_transfers(StmtNode* stmt) {
             }
 #line 52 "src/main.vl"
             cur = cur->next;
-            __loop_cont_280: __attribute__((unused));
+            __loop_cont_281: __attribute__((unused));
         }
-        __loop_break_280: __attribute__((unused));
+        __loop_break_281: __attribute__((unused));
 #line 54 "src/main.vl"
         return false;
     }
@@ -27657,9 +27975,9 @@ bool defer_body_transfers(StmtNode* stmt) {
             }
 #line 67 "src/main.vl"
             c = c->next;
-            __loop_cont_281: __attribute__((unused));
+            __loop_cont_282: __attribute__((unused));
         }
-        __loop_break_281: __attribute__((unused));
+        __loop_break_282: __attribute__((unused));
 #line 69 "src/main.vl"
         return false;
     }
@@ -27704,9 +28022,9 @@ const char* find_defer_transfer_keyword(StmtNode* stmt) {
             }
 #line 92 "src/main.vl"
             cur = cur->next;
-            __loop_cont_282: __attribute__((unused));
+            __loop_cont_283: __attribute__((unused));
         }
-        __loop_break_282: __attribute__((unused));
+        __loop_break_283: __attribute__((unused));
 #line 94 "src/main.vl"
         return "statement";
     }
@@ -27742,9 +28060,9 @@ const char* find_defer_transfer_keyword(StmtNode* stmt) {
             }
 #line 107 "src/main.vl"
             c = c->next;
-            __loop_cont_283: __attribute__((unused));
+            __loop_cont_284: __attribute__((unused));
         }
-        __loop_break_283: __attribute__((unused));
+        __loop_break_284: __attribute__((unused));
 #line 109 "src/main.vl"
         return "statement";
     }
@@ -28088,9 +28406,9 @@ const char* check_math_call(SymbolTable* st, ExprNode* expr, const char* member)
         argc += 1;
 #line 144 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_284: __attribute__((unused));
+        __loop_cont_285: __attribute__((unused));
     }
-    __loop_break_284: __attribute__((unused));
+    __loop_break_285: __attribute__((unused));
 #line 145 "src/main.vl"
     if ((argc != ((size_t)(arity)))) {
 #line 146 "src/main.vl"
@@ -28162,9 +28480,9 @@ const char* check_math_call(SymbolTable* st, ExprNode* expr, const char* member)
         idx += 1;
 #line 169 "src/main.vl"
         cur = cur->next;
-        __loop_cont_285: __attribute__((unused));
+        __loop_cont_286: __attribute__((unused));
     }
-    __loop_break_285: __attribute__((unused));
+    __loop_break_286: __attribute__((unused));
 #line 171 "src/main.vl"
     if ((((member != NULL && "min" != NULL) ? (strcmp(member, "min") == 0) : (member == "min")) || ((member != NULL && "max" != NULL) ? (strcmp(member, "max") == 0) : (member == "max")))) {
 #line 171 "src/main.vl"
@@ -28248,10 +28566,10 @@ bool check_div_zero_expr(SymbolTable* st, ExprNode* expr) {
 #line 208 "src/main.vl"
         if ((expr->op == TOK_SLASH)) {
 #line 209 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "Division by zero");
+            diag("VELO-E0005", expr->line, expr->col);
         } else {
 #line 211 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "Modulo by zero");
+            diag("VELO-E0006", expr->line, expr->col);
         }
 #line 213 "src/main.vl"
         st->error_count += 1;
@@ -28279,7 +28597,7 @@ bool check_div_zero_assign(SymbolTable* st, StmtNode* stmt) {
 #line 224 "src/main.vl"
     if ((eval_const_int_expr(stmt->val_expr, (&(v))) && (v == 0LL))) {
 #line 225 "src/main.vl"
-        report_error("semantic", stmt->line, stmt->col, "Division by zero");
+        diag("VELO-E0005", stmt->line, stmt->col);
 #line 226 "src/main.vl"
         st->error_count += 1;
 #line 227 "src/main.vl"
@@ -28431,9 +28749,9 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
                         try_adapt_int_literal(st, elem_t, cur_elem, cur_elem->line, cur_elem->col);
 #line 96 "src/main.vl"
                         cur_elem = cur_elem->next;
-                        __loop_cont_286: __attribute__((unused));
+                        __loop_cont_287: __attribute__((unused));
                     }
-                    __loop_break_286: __attribute__((unused));
+                    __loop_break_287: __attribute__((unused));
                 }
 #line 99 "src/main.vl"
                 adapt_ok = try_adapt_int_literal(st, stmt->type_name, stmt->val_expr, stmt->line, stmt->col);
@@ -28538,9 +28856,9 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
                     try_adapt_int_literal(st, elem_t, cur_elem, cur_elem->line, cur_elem->col);
 #line 138 "src/main.vl"
                     cur_elem = cur_elem->next;
-                    __loop_cont_287: __attribute__((unused));
+                    __loop_cont_288: __attribute__((unused));
                 }
-                __loop_break_287: __attribute__((unused));
+                __loop_break_288: __attribute__((unused));
             }
 #line 141 "src/main.vl"
             bool adapt_ok = try_adapt_int_literal(st, target_type, stmt->val_expr, stmt->line, stmt->col);
@@ -28901,9 +29219,9 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
                                 cur_b = cur_b->next;
 #line 291 "src/main.vl"
                                 cur_f = cur_f->next;
-                                __loop_cont_290: __attribute__((unused));
+                                __loop_cont_291: __attribute__((unused));
                             }
-                            __loop_break_290: __attribute__((unused));
+                            __loop_break_291: __attribute__((unused));
                         } else
 #line 293 "src/main.vl"
                         if (((v_sym->payload_type != NULL) && (val->first_arg != NULL))) {
@@ -28917,9 +29235,9 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
                 }
 #line 298 "src/main.vl"
                 val = val->next;
-                __loop_cont_289: __attribute__((unused));
+                __loop_cont_290: __attribute__((unused));
             }
-            __loop_break_289: __attribute__((unused));
+            __loop_break_290: __attribute__((unused));
 #line 300 "src/main.vl"
             if (((((((m_type != NULL && "?string" != NULL) ? (strcmp(m_type, "?string") == 0) : (m_type == "?string")) || is_optional_type(m_type)) && (!cur_case->is_default)) && (cur_case->first_val != NULL)) && (cur_case->first_val->kind != EXPR_NULL))) {
 #line 301 "src/main.vl"
@@ -28937,9 +29255,9 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
             exit_scope(st);
 #line 306 "src/main.vl"
             cur_case = cur_case->next;
-            __loop_cont_288: __attribute__((unused));
+            __loop_cont_289: __attribute__((unused));
         }
-        __loop_break_288: __attribute__((unused));
+        __loop_break_289: __attribute__((unused));
     } else
 #line 308 "src/main.vl"
     if ((stmt->kind == STMT_BLOCK)) {
@@ -28958,9 +29276,9 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
             }
 #line 315 "src/main.vl"
             cur = cur->next;
-            __loop_cont_291: __attribute__((unused));
+            __loop_cont_292: __attribute__((unused));
         }
-        __loop_break_291: __attribute__((unused));
+        __loop_break_292: __attribute__((unused));
 #line 317 "src/main.vl"
         exit_scope(st);
     } else
@@ -29054,9 +29372,9 @@ bool pact_signature_matches(FunctionSym* fn_sym, const char* clean_concrete, Stm
         fp = fp->next;
 #line 53 "src/main.vl"
         rp = rp->next;
-        __loop_cont_292: __attribute__((unused));
+        __loop_cont_293: __attribute__((unused));
     }
-    __loop_break_292: __attribute__((unused));
+    __loop_break_293: __attribute__((unused));
 #line 56 "src/main.vl"
     if (((fp != NULL) || (rp != NULL))) {
 #line 57 "src/main.vl"
@@ -29103,9 +29421,9 @@ bool pact_method_is_satisfied(SymbolTable* st, const char* clean_concrete, StmtN
         }
 #line 83 "src/main.vl"
         fn_sym = fn_sym->next;
-        __loop_cont_293: __attribute__((unused));
+        __loop_cont_294: __attribute__((unused));
     }
-    __loop_break_293: __attribute__((unused));
+    __loop_break_294: __attribute__((unused));
 #line 85 "src/main.vl"
     return false;
 }
@@ -29162,9 +29480,9 @@ void verify_single_pact_bound(SymbolTable* st, const char* concrete_type, const 
         }
 #line 116 "src/main.vl"
         cur_m = cur_m->next;
-        __loop_cont_294: __attribute__((unused));
+        __loop_cont_295: __attribute__((unused));
     }
-    __loop_break_294: __attribute__((unused));
+    __loop_break_295: __attribute__((unused));
 }
 
 #line 121 "src/main.vl"
@@ -29190,18 +29508,18 @@ void verify_type_pact_constraints(SymbolTable* st, const char* type_params, cons
         for (int32_t it = 0; (((p_end < plen) && velo_cmp_ne_u_s(type_params[p_end], ','))); it++) {
 #line 130 "src/main.vl"
             p_end += 1;
-            __loop_cont_296: __attribute__((unused));
+            __loop_cont_297: __attribute__((unused));
         }
-        __loop_break_296: __attribute__((unused));
+        __loop_break_297: __attribute__((unused));
 #line 131 "src/main.vl"
         size_t a_end = a_start;
 #line 132 "src/main.vl"
         for (int32_t it = 0; (((a_end < alen) && velo_cmp_ne_u_s(type_args[a_end], ','))); it++) {
 #line 132 "src/main.vl"
             a_end += 1;
-            __loop_cont_297: __attribute__((unused));
+            __loop_cont_298: __attribute__((unused));
         }
-        __loop_break_297: __attribute__((unused));
+        __loop_break_298: __attribute__((unused));
 #line 134 "src/main.vl"
         const char* cur_param = mono_trim(copy_slice_to_string(type_params, p_start, (p_end - p_start)));
 #line 135 "src/main.vl"
@@ -29226,9 +29544,9 @@ void verify_type_pact_constraints(SymbolTable* st, const char* type_params, cons
         p_start = (p_end + 1);
 #line 146 "src/main.vl"
         a_start = (a_end + 1);
-        __loop_cont_295: __attribute__((unused));
+        __loop_cont_296: __attribute__((unused));
     }
-    __loop_break_295: __attribute__((unused));
+    __loop_break_296: __attribute__((unused));
 }
 
 #line 151 "src/main.vl"
@@ -29246,9 +29564,9 @@ void check_pact_bounds(SymbolTable* st, ProgramNode* prog) {
         }
 #line 158 "src/main.vl"
         cur = cur->next;
-        __loop_cont_298: __attribute__((unused));
+        __loop_cont_299: __attribute__((unused));
     }
-    __loop_break_298: __attribute__((unused));
+    __loop_break_299: __attribute__((unused));
 }
 
 #line 18 "src/main.vl"
@@ -29365,9 +29683,9 @@ bool stmt_always_returns(SymbolTable* st, StmtNode* stmt) {
             }
 #line 76 "src/main.vl"
             cur = cur->next;
-            __loop_cont_299: __attribute__((unused));
+            __loop_cont_300: __attribute__((unused));
         }
-        __loop_break_299: __attribute__((unused));
+        __loop_break_300: __attribute__((unused));
 #line 78 "src/main.vl"
         return false;
     }
@@ -29417,9 +29735,9 @@ bool stmt_always_returns(SymbolTable* st, StmtNode* stmt) {
             matched_variants += cur_c->val_count;
 #line 95 "src/main.vl"
             cur_c = cur_c->next;
-            __loop_cont_300: __attribute__((unused));
+            __loop_cont_301: __attribute__((unused));
         }
-        __loop_break_300: __attribute__((unused));
+        __loop_break_301: __attribute__((unused));
 #line 97 "src/main.vl"
         if (has_default) {
 #line 97 "src/main.vl"
@@ -29467,9 +29785,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
         }
 #line 124 "src/main.vl"
         ucur = ucur->next;
-        __loop_cont_301: __attribute__((unused));
+        __loop_cont_302: __attribute__((unused));
     }
-    __loop_break_301: __attribute__((unused));
+    __loop_break_302: __attribute__((unused));
 #line 128 "src/main.vl"
     StmtNode* cur = prog->first_decl;
 #line 129 "src/main.vl"
@@ -29498,9 +29816,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
                 check_struct_default_field(st, cur_f);
 #line 141 "src/main.vl"
                 cur_f = cur_f->next;
-                __loop_cont_303: __attribute__((unused));
+                __loop_cont_304: __attribute__((unused));
             }
-            __loop_break_303: __attribute__((unused));
+            __loop_break_304: __attribute__((unused));
         } else
 #line 143 "src/main.vl"
         if ((cur->kind == DECL_KIND)) {
@@ -29517,9 +29835,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
                 }
 #line 145 "src/main.vl"
                 v = v->next;
-                __loop_cont_304: __attribute__((unused));
+                __loop_cont_305: __attribute__((unused));
             }
-            __loop_break_304: __attribute__((unused));
+            __loop_break_305: __attribute__((unused));
 #line 146 "src/main.vl"
             KindSym* k_sym = register_kind(st, cur->name, is_tu, cur->line, cur->col);
 #line 147 "src/main.vl"
@@ -29568,16 +29886,16 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
                     }
 #line 157 "src/main.vl"
                     cf = cf->next;
-                    __loop_cont_306: __attribute__((unused));
+                    __loop_cont_307: __attribute__((unused));
                 }
-                __loop_break_306: __attribute__((unused));
+                __loop_break_307: __attribute__((unused));
 #line 159 "src/main.vl"
                 kind_add_variant(k_sym, cv->name, cv->discriminant, cv->has_discriminant, cv->payload_type, f_sym, cv->field_count, cv->line, cv->col);
 #line 160 "src/main.vl"
                 cv = cv->next;
-                __loop_cont_305: __attribute__((unused));
+                __loop_cont_306: __attribute__((unused));
             }
-            __loop_break_305: __attribute__((unused));
+            __loop_break_306: __attribute__((unused));
         } else
 #line 162 "src/main.vl"
         if ((cur->kind == DECL_PACT)) {
@@ -29590,9 +29908,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
         }
 #line 167 "src/main.vl"
         cur = cur->next;
-        __loop_cont_302: __attribute__((unused));
+        __loop_cont_303: __attribute__((unused));
     }
-    __loop_break_302: __attribute__((unused));
+    __loop_break_303: __attribute__((unused));
 #line 171 "src/main.vl"
     cur = prog->first_decl;
 #line 172 "src/main.vl"
@@ -29630,9 +29948,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
         }
 #line 187 "src/main.vl"
         cur = cur->next;
-        __loop_cont_307: __attribute__((unused));
+        __loop_cont_308: __attribute__((unused));
     }
-    __loop_break_307: __attribute__((unused));
+    __loop_break_308: __attribute__((unused));
 #line 191 "src/main.vl"
     cur = prog->first_decl;
 #line 192 "src/main.vl"
@@ -29663,15 +29981,15 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
                 function_add_param(fn_sym, cur_p->name, cur_p->type_name);
 #line 205 "src/main.vl"
                 cur_p = cur_p->next;
-                __loop_cont_309: __attribute__((unused));
+                __loop_cont_310: __attribute__((unused));
             }
-            __loop_break_309: __attribute__((unused));
+            __loop_break_310: __attribute__((unused));
         }
 #line 208 "src/main.vl"
         cur = cur->next;
-        __loop_cont_308: __attribute__((unused));
+        __loop_cont_309: __attribute__((unused));
     }
-    __loop_break_308: __attribute__((unused));
+    __loop_break_309: __attribute__((unused));
 #line 212 "src/main.vl"
     bool changed = true;
 #line 213 "src/main.vl"
@@ -29698,9 +30016,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
                     define_parameter(st, cur_p->name, cur_p->type_name, cur_p->line, cur_p->col);
 #line 222 "src/main.vl"
                     cur_p = cur_p->next;
-                    __loop_cont_312: __attribute__((unused));
+                    __loop_cont_313: __attribute__((unused));
                 }
-                __loop_break_312: __attribute__((unused));
+                __loop_break_313: __attribute__((unused));
 #line 223 "src/main.vl"
                 const char* inf_ret = "void";
 #line 224 "src/main.vl"
@@ -29727,12 +30045,12 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
             }
 #line 235 "src/main.vl"
             cur = cur->next;
-            __loop_cont_311: __attribute__((unused));
+            __loop_cont_312: __attribute__((unused));
         }
-        __loop_break_311: __attribute__((unused));
-        __loop_cont_310: __attribute__((unused));
+        __loop_break_312: __attribute__((unused));
+        __loop_cont_311: __attribute__((unused));
     }
-    __loop_break_310: __attribute__((unused));
+    __loop_break_311: __attribute__((unused));
 #line 238 "src/main.vl"
     cur = prog->first_decl;
 #line 239 "src/main.vl"
@@ -29751,9 +30069,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
         }
 #line 245 "src/main.vl"
         cur = cur->next;
-        __loop_cont_313: __attribute__((unused));
+        __loop_cont_314: __attribute__((unused));
     }
-    __loop_break_313: __attribute__((unused));
+    __loop_break_314: __attribute__((unused));
 #line 249 "src/main.vl"
     check_pact_bounds(st, prog);
 #line 252 "src/main.vl"
@@ -29789,9 +30107,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
                 define_parameter(st, cur_p->name, cur_p->type_name, cur_p->line, cur_p->col);
 #line 266 "src/main.vl"
                 cur_p = cur_p->next;
-                __loop_cont_315: __attribute__((unused));
+                __loop_cont_316: __attribute__((unused));
             }
-            __loop_break_315: __attribute__((unused));
+            __loop_break_316: __attribute__((unused));
 #line 268 "src/main.vl"
             check_statement(st, cur->return_type, cur->body);
 #line 269 "src/main.vl"
@@ -29842,9 +30160,9 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
         }
 #line 295 "src/main.vl"
         cur = cur->next;
-        __loop_cont_314: __attribute__((unused));
+        __loop_cont_315: __attribute__((unused));
     }
-    __loop_break_314: __attribute__((unused));
+    __loop_break_315: __attribute__((unused));
 #line 298 "src/main.vl"
     return velo_cmp_eq_u_s(st->error_count, 0);
 }
@@ -30522,9 +30840,9 @@ const char* check_str_call(SymbolTable* st, ExprNode* expr, const char* member) 
             argc += 1;
 #line 78 "src/main.vl"
             cur_a = cur_a->next;
-            __loop_cont_316: __attribute__((unused));
+            __loop_cont_317: __attribute__((unused));
         }
-        __loop_break_316: __attribute__((unused));
+        __loop_break_317: __attribute__((unused));
 #line 79 "src/main.vl"
         if (velo_cmp_ne_u_s(argc, 1)) {
 #line 80 "src/main.vl"
@@ -30560,9 +30878,9 @@ const char* check_str_call(SymbolTable* st, ExprNode* expr, const char* member) 
             argc += 1;
 #line 92 "src/main.vl"
             cur_a = cur_a->next;
-            __loop_cont_317: __attribute__((unused));
+            __loop_cont_318: __attribute__((unused));
         }
-        __loop_break_317: __attribute__((unused));
+        __loop_break_318: __attribute__((unused));
 #line 93 "src/main.vl"
         if (velo_cmp_lt_u_s(argc, 1)) {
 #line 94 "src/main.vl"
@@ -30623,9 +30941,9 @@ const char* check_str_call(SymbolTable* st, ExprNode* expr, const char* member) 
 #line 119 "src/main.vl"
                         fi += 1;
                     }
-                    __loop_cont_318: __attribute__((unused));
+                    __loop_cont_319: __attribute__((unused));
                 }
-                __loop_break_318: __attribute__((unused));
+                __loop_break_319: __attribute__((unused));
 #line 122 "src/main.vl"
                 size_t additional_args = (argc - 1);
 #line 123 "src/main.vl"
@@ -30693,9 +31011,9 @@ const char* check_str_call(SymbolTable* st, ExprNode* expr, const char* member) 
         argc += 1;
 #line 150 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_319: __attribute__((unused));
+        __loop_cont_320: __attribute__((unused));
     }
-    __loop_break_319: __attribute__((unused));
+    __loop_break_320: __attribute__((unused));
 #line 151 "src/main.vl"
     if ((argc != ((size_t)(arity)))) {
 #line 152 "src/main.vl"
@@ -30742,9 +31060,9 @@ const char* check_str_call(SymbolTable* st, ExprNode* expr, const char* member) 
         }
 #line 167 "src/main.vl"
         cur = cur->next;
-        __loop_cont_320: __attribute__((unused));
+        __loop_cont_321: __attribute__((unused));
     }
-    __loop_break_320: __attribute__((unused));
+    __loop_break_321: __attribute__((unused));
 #line 169 "src/main.vl"
     if (((((member != NULL && "contains" != NULL) ? (strcmp(member, "contains") == 0) : (member == "contains")) || ((member != NULL && "starts_with" != NULL) ? (strcmp(member, "starts_with") == 0) : (member == "starts_with"))) || ((member != NULL && "ends_with" != NULL) ? (strcmp(member, "ends_with") == 0) : (member == "ends_with")))) {
 #line 169 "src/main.vl"
@@ -30861,9 +31179,9 @@ bool is_interp_expr_resolvable(SymbolTable* st, ExprNode* expr) {
             }
 #line 212 "src/main.vl"
             cur = cur->next;
-            __loop_cont_321: __attribute__((unused));
+            __loop_cont_322: __attribute__((unused));
         }
-        __loop_break_321: __attribute__((unused));
+        __loop_break_322: __attribute__((unused));
 #line 214 "src/main.vl"
         return true;
     }
@@ -31004,7 +31322,7 @@ const char* check_shelf_member_call(SymbolTable* st, ExprNode* expr) {
 #line 70 "src/main.vl"
             if (((got != NULL && "void" != NULL) ? (strcmp(got, "void") == 0) : (got == "void"))) {
 #line 71 "src/main.vl"
-                report_error("semantic", expr->line, expr->col, "shelf[dyn] put: cannot box a void value");
+                diag("VELO-E0016", expr->line, expr->col);
 #line 71 "src/main.vl"
                 st->error_count += 1;
 #line 72 "src/main.vl"
@@ -31599,9 +31917,9 @@ const char* check_time_call(SymbolTable* st, ExprNode* expr, const char* member)
         argc += 1;
 #line 85 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_322: __attribute__((unused));
+        __loop_cont_323: __attribute__((unused));
     }
-    __loop_break_322: __attribute__((unused));
+    __loop_break_323: __attribute__((unused));
 #line 86 "src/main.vl"
     if ((argc != ((size_t)(arity)))) {
 #line 87 "src/main.vl"
@@ -31648,9 +31966,9 @@ const char* check_time_call(SymbolTable* st, ExprNode* expr, const char* member)
         }
 #line 102 "src/main.vl"
         cur = cur->next;
-        __loop_cont_323: __attribute__((unused));
+        __loop_cont_324: __attribute__((unused));
     }
-    __loop_break_323: __attribute__((unused));
+    __loop_break_324: __attribute__((unused));
 #line 104 "src/main.vl"
     return time_member_ret(member);
 }
@@ -31864,9 +32182,9 @@ const char* check_os_call(SymbolTable* st, ExprNode* expr, const char* member) {
         argc += 1;
 #line 90 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_324: __attribute__((unused));
+        __loop_cont_325: __attribute__((unused));
     }
-    __loop_break_324: __attribute__((unused));
+    __loop_break_325: __attribute__((unused));
 #line 91 "src/main.vl"
     if ((argc != ((size_t)(arity)))) {
 #line 92 "src/main.vl"
@@ -31956,9 +32274,9 @@ const char* check_os_call(SymbolTable* st, ExprNode* expr, const char* member) {
         idx += 1;
 #line 126 "src/main.vl"
         cur = cur->next;
-        __loop_cont_325: __attribute__((unused));
+        __loop_cont_326: __attribute__((unused));
     }
-    __loop_break_325: __attribute__((unused));
+    __loop_break_326: __attribute__((unused));
 #line 128 "src/main.vl"
     return os_member_ret(member);
 }
@@ -32423,9 +32741,9 @@ const char* check_fs_call(SymbolTable* st, ExprNode* expr, const char* member) {
         argc += 1;
 #line 153 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_326: __attribute__((unused));
+        __loop_cont_327: __attribute__((unused));
     }
-    __loop_break_326: __attribute__((unused));
+    __loop_break_327: __attribute__((unused));
 #line 154 "src/main.vl"
     if ((argc != ((size_t)(arity)))) {
 #line 155 "src/main.vl"
@@ -32541,9 +32859,9 @@ const char* check_fs_call(SymbolTable* st, ExprNode* expr, const char* member) {
         k_idx += 1;
 #line 200 "src/main.vl"
         cur = cur->next;
-        __loop_cont_327: __attribute__((unused));
+        __loop_cont_328: __attribute__((unused));
     }
-    __loop_break_327: __attribute__((unused));
+    __loop_break_328: __attribute__((unused));
 #line 202 "src/main.vl"
     return fs_member_ret(member);
 }
@@ -32885,9 +33203,9 @@ const char* io_member_sig(const char* member) {
         sb_append_str((&(msb)), io_kind_param(io_arg_kind(member, i)));
 #line 143 "src/main.vl"
         i += 1;
-        __loop_cont_328: __attribute__((unused));
+        __loop_cont_329: __attribute__((unused));
     }
-    __loop_break_328: __attribute__((unused));
+    __loop_break_329: __attribute__((unused));
 #line 145 "src/main.vl"
     sb_append_str((&(msb)), ")");
 #line 146 "src/main.vl"
@@ -33035,9 +33353,9 @@ const char* check_io_call(SymbolTable* st, ExprNode* expr, const char* member) {
         idx += 1;
 #line 228 "src/main.vl"
         cur = cur->next;
-        __loop_cont_329: __attribute__((unused));
+        __loop_cont_330: __attribute__((unused));
     }
-    __loop_break_329: __attribute__((unused));
+    __loop_break_330: __attribute__((unused));
 #line 230 "src/main.vl"
     return io_member_ret(member);
 }
@@ -33067,9 +33385,9 @@ const char* check_simd_constructor(SymbolTable* st, ExprNode* expr) {
         argc += 1;
 #line 22 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_330: __attribute__((unused));
+        __loop_cont_331: __attribute__((unused));
     }
-    __loop_break_330: __attribute__((unused));
+    __loop_break_331: __attribute__((unused));
 #line 24 "src/main.vl"
     if (((name != NULL && "f32x4" != NULL) ? (strcmp(name, "f32x4") == 0) : (name == "f32x4"))) {
 #line 25 "src/main.vl"
@@ -33106,9 +33424,9 @@ const char* check_simd_constructor(SymbolTable* st, ExprNode* expr) {
             }
 #line 42 "src/main.vl"
             cur = cur->next;
-            __loop_cont_331: __attribute__((unused));
+            __loop_cont_332: __attribute__((unused));
         }
-        __loop_break_331: __attribute__((unused));
+        __loop_break_332: __attribute__((unused));
 #line 44 "src/main.vl"
         return "f32x4";
     }
@@ -33181,9 +33499,9 @@ const char* check_simd_constructor(SymbolTable* st, ExprNode* expr) {
             }
 #line 84 "src/main.vl"
             cur = cur->next;
-            __loop_cont_332: __attribute__((unused));
+            __loop_cont_333: __attribute__((unused));
         }
-        __loop_break_332: __attribute__((unused));
+        __loop_break_333: __attribute__((unused));
 #line 86 "src/main.vl"
         return "i32x4";
     }
@@ -33485,9 +33803,9 @@ const char* check_simd_call(SymbolTable* st, ExprNode* expr, const char* member)
         argc += 1;
 #line 228 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_333: __attribute__((unused));
+        __loop_cont_334: __attribute__((unused));
     }
-    __loop_break_333: __attribute__((unused));
+    __loop_break_334: __attribute__((unused));
 #line 230 "src/main.vl"
     if (((member != NULL && "dot" != NULL) ? (strcmp(member, "dot") == 0) : (member == "dot"))) {
 #line 231 "src/main.vl"
@@ -33695,9 +34013,9 @@ const char* check_act_call(SymbolTable* st, ExprNode* expr, const char* act_type
     for (int32_t it = 0; (((i < len) && velo_cmp_ne_u_s(clean[i], '('))); it++) {
 #line 35 "src/main.vl"
         i += 1;
-        __loop_cont_334: __attribute__((unused));
+        __loop_cont_335: __attribute__((unused));
     }
-    __loop_break_334: __attribute__((unused));
+    __loop_break_335: __attribute__((unused));
 #line 36 "src/main.vl"
     if ((i < len)) {
 #line 36 "src/main.vl"
@@ -33713,13 +34031,13 @@ const char* check_act_call(SymbolTable* st, ExprNode* expr, const char* act_type
         for (int32_t it = 0; (((p_scan < len) && (velo_cmp_eq_u_s(clean[p_scan], ' ') || velo_cmp_eq_u_s(clean[p_scan], '\t')))); it++) {
 #line 41 "src/main.vl"
             p_scan += 1;
-            __loop_cont_336: __attribute__((unused));
+            __loop_cont_337: __attribute__((unused));
         }
-        __loop_break_336: __attribute__((unused));
+        __loop_break_337: __attribute__((unused));
 #line 42 "src/main.vl"
         if (((p_scan >= len) || velo_cmp_eq_u_s(clean[p_scan], ')'))) {
 #line 42 "src/main.vl"
-            goto __loop_break_335;
+            goto __loop_break_336;
         }
 #line 43 "src/main.vl"
         p_count += 1;
@@ -33727,21 +34045,21 @@ const char* check_act_call(SymbolTable* st, ExprNode* expr, const char* act_type
         for (int32_t it = 0; ((((p_scan < len) && velo_cmp_ne_u_s(clean[p_scan], ',')) && velo_cmp_ne_u_s(clean[p_scan], ')'))); it++) {
 #line 44 "src/main.vl"
             p_scan += 1;
-            __loop_cont_337: __attribute__((unused));
+            __loop_cont_338: __attribute__((unused));
         }
-        __loop_break_337: __attribute__((unused));
+        __loop_break_338: __attribute__((unused));
 #line 45 "src/main.vl"
         if (((p_scan < len) && velo_cmp_eq_u_s(clean[p_scan], ','))) {
 #line 45 "src/main.vl"
             p_scan += 1;
         }
-        __loop_cont_335: __attribute__((unused));
+        __loop_cont_336: __attribute__((unused));
     }
-    __loop_break_335: __attribute__((unused));
+    __loop_break_336: __attribute__((unused));
 #line 48 "src/main.vl"
     if ((expr->arg_count != p_count)) {
 #line 49 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, "Mismatched argument count in function call");
+        diag("VELO-E0002", expr->line, expr->col);
 #line 50 "src/main.vl"
         st->error_count += 1;
     }
@@ -33755,13 +34073,13 @@ const char* check_act_call(SymbolTable* st, ExprNode* expr, const char* act_type
         for (int32_t it = 0; (((i < len) && (velo_cmp_eq_u_s(clean[i], ' ') || velo_cmp_eq_u_s(clean[i], '\t')))); it++) {
 #line 56 "src/main.vl"
             i += 1;
-            __loop_cont_339: __attribute__((unused));
+            __loop_cont_340: __attribute__((unused));
         }
-        __loop_break_339: __attribute__((unused));
+        __loop_break_340: __attribute__((unused));
 #line 57 "src/main.vl"
         if (((i >= len) || velo_cmp_eq_u_s(clean[i], ')'))) {
 #line 57 "src/main.vl"
-            goto __loop_break_338;
+            goto __loop_break_339;
         }
 #line 58 "src/main.vl"
         size_t start = i;
@@ -33769,18 +34087,18 @@ const char* check_act_call(SymbolTable* st, ExprNode* expr, const char* act_type
         for (int32_t it = 0; ((((i < len) && velo_cmp_ne_u_s(clean[i], ',')) && velo_cmp_ne_u_s(clean[i], ')'))); it++) {
 #line 59 "src/main.vl"
             i += 1;
-            __loop_cont_340: __attribute__((unused));
+            __loop_cont_341: __attribute__((unused));
         }
-        __loop_break_340: __attribute__((unused));
+        __loop_break_341: __attribute__((unused));
 #line 60 "src/main.vl"
         size_t end = i;
 #line 61 "src/main.vl"
         for (int32_t it = 0; (((end > start) && (velo_cmp_eq_u_s(clean[(end - 1)], ' ') || velo_cmp_eq_u_s(clean[(end - 1)], '\t')))); it++) {
 #line 61 "src/main.vl"
             end -= 1;
-            __loop_cont_341: __attribute__((unused));
+            __loop_cont_342: __attribute__((unused));
         }
-        __loop_break_341: __attribute__((unused));
+        __loop_break_342: __attribute__((unused));
 #line 62 "src/main.vl"
         const char* p_type = copy_slice_to_string(clean, start, (end - start));
 #line 64 "src/main.vl"
@@ -33825,9 +34143,9 @@ const char* check_act_call(SymbolTable* st, ExprNode* expr, const char* act_type
 #line 83 "src/main.vl"
             i += 1;
         }
-        __loop_cont_338: __attribute__((unused));
+        __loop_cont_339: __attribute__((unused));
     }
-    __loop_break_338: __attribute__((unused));
+    __loop_break_339: __attribute__((unused));
 #line 85 "src/main.vl"
     return ret_type;
 }
@@ -33839,7 +34157,7 @@ const char* check_variant_constructor(SymbolTable* st, ExprNode* expr, KindSym* 
 #line 91 "src/main.vl"
         if (velo_cmp_ne_u_s(expr->arg_count, 1)) {
 #line 92 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "Mismatched argument count in variant constructor");
+            diag("VELO-E0012", expr->line, expr->col);
 #line 93 "src/main.vl"
             st->error_count += 1;
         }
@@ -33881,7 +34199,7 @@ const char* check_variant_constructor(SymbolTable* st, ExprNode* expr, KindSym* 
 #line 113 "src/main.vl"
         if ((expr->arg_count != v_sym->field_count)) {
 #line 114 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "Mismatched argument count in variant constructor");
+            diag("VELO-E0012", expr->line, expr->col);
 #line 115 "src/main.vl"
             st->error_count += 1;
         }
@@ -33932,9 +34250,9 @@ const char* check_variant_constructor(SymbolTable* st, ExprNode* expr, KindSym* 
             cur_f = cur_f->next;
 #line 140 "src/main.vl"
             cur_a = cur_a->next;
-            __loop_cont_342: __attribute__((unused));
+            __loop_cont_343: __attribute__((unused));
         }
-        __loop_break_342: __attribute__((unused));
+        __loop_break_343: __attribute__((unused));
     } else {
 #line 143 "src/main.vl"
         if (velo_cmp_ne_u_s(expr->arg_count, 0)) {
@@ -34064,7 +34382,7 @@ const char* infer_array_lit(SymbolTable* st, ExprNode* expr) {
 #line 23 "src/main.vl"
         if ((!types_are_compatible(elem_t, cur_t))) {
 #line 24 "src/main.vl"
-            report_error("semantic", cur->line, cur->col, "Mismatched element type in array literal");
+            diag("VELO-E0010", cur->line, cur->col);
 #line 25 "src/main.vl"
             st->error_count += 1;
 #line 26 "src/main.vl"
@@ -34072,9 +34390,9 @@ const char* infer_array_lit(SymbolTable* st, ExprNode* expr) {
         }
 #line 28 "src/main.vl"
         cur = cur->next;
-        __loop_cont_343: __attribute__((unused));
+        __loop_cont_344: __attribute__((unused));
     }
-    __loop_break_343: __attribute__((unused));
+    __loop_break_344: __attribute__((unused));
 #line 30 "src/main.vl"
     StringBuilder sb = create_sb((((usize)strlen(elem_t)) + 16));
 #line 31 "src/main.vl"
@@ -34118,7 +34436,7 @@ const char* check_array_index(SymbolTable* st, ExprNode* expr, const char* clean
 #line 53 "src/main.vl"
     if ((!is_int_type(idx_t))) {
 #line 54 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, "Array index must be an integer");
+        diag("VELO-E0004", expr->line, expr->col);
 #line 55 "src/main.vl"
         st->error_count += 1;
 #line 56 "src/main.vl"
@@ -34133,7 +34451,7 @@ const char* check_array_index(SymbolTable* st, ExprNode* expr, const char* clean
 #line 61 "src/main.vl"
         if (((const_idx < 0LL) || (const_idx >= arr_len))) {
 #line 62 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "Array index out of bounds");
+            diag("VELO-E0003", expr->line, expr->col);
 #line 63 "src/main.vl"
             st->error_count += 1;
 #line 64 "src/main.vl"
@@ -34143,7 +34461,7 @@ const char* check_array_index(SymbolTable* st, ExprNode* expr, const char* clean
 #line 66 "src/main.vl"
     if (((((expr->index->kind == EXPR_UNARY) && (expr->index->op == TOK_MINUS)) && (expr->index->operand != NULL)) && (expr->index->operand->kind == EXPR_INT))) {
 #line 67 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, "Array index out of bounds");
+        diag("VELO-E0003", expr->line, expr->col);
 #line 68 "src/main.vl"
         st->error_count += 1;
 #line 69 "src/main.vl"
@@ -34308,7 +34626,7 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
             return k_sym->name;
         }
 #line 61 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, "Cannot infer kind type for variant");
+        diag("VELO-E0011", expr->line, expr->col);
 #line 61 "src/main.vl"
         st->error_count += 1;
 #line 62 "src/main.vl"
@@ -34379,9 +34697,9 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
                     p_idx += 1;
 #line 79 "src/main.vl"
                     cur_p = cur_p->next;
-                    __loop_cont_344: __attribute__((unused));
+                    __loop_cont_345: __attribute__((unused));
                 }
-                __loop_break_344: __attribute__((unused));
+                __loop_break_345: __attribute__((unused));
 #line 80 "src/main.vl"
                 sb_append_str((&(sb)), ") -> ");
 #line 80 "src/main.vl"
@@ -34407,7 +34725,7 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
                 return expr->str_val;
             }
 #line 85 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "Undeclared identifier");
+            diag("VELO-E0001", expr->line, expr->col);
 #line 85 "src/main.vl"
             st->error_count += 1;
 #line 86 "src/main.vl"
@@ -34592,7 +34910,7 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
 #line 136 "src/main.vl"
         if ((((velo_cmp_gt_u_s(((usize)strlen(target_type)), 0) && velo_cmp_eq_u_s(target_type[0], '@')) && st->strict_safety) && (st->current_unsafe_depth <= 0))) {
 #line 137 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety.");
+            diag("VELO-E0020", expr->line, expr->col);
 #line 137 "src/main.vl"
             st->error_count += 1;
         }
@@ -34640,7 +34958,7 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
 #line 151 "src/main.vl"
             if ((st->strict_safety && (st->current_unsafe_depth <= 0))) {
 #line 152 "src/main.vl"
-                report_error("semantic", expr->line, expr->col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety.");
+                diag("VELO-E0020", expr->line, expr->col);
 #line 152 "src/main.vl"
                 st->error_count += 1;
             }
@@ -34663,7 +34981,7 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
 #line 162 "src/main.vl"
             if ((st->strict_safety && (st->current_unsafe_depth <= 0))) {
 #line 163 "src/main.vl"
-                report_error("semantic", expr->line, expr->col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety.");
+                diag("VELO-E0020", expr->line, expr->col);
 #line 163 "src/main.vl"
                 st->error_count += 1;
             }
@@ -34992,7 +35310,7 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
 #line 253 "src/main.vl"
                 if ((expr->arg_count != fn_sym->param_count)) {
 #line 253 "src/main.vl"
-                    report_error("semantic", expr->line, expr->col, "Mismatched argument count in function call");
+                    diag("VELO-E0002", expr->line, expr->col);
 #line 253 "src/main.vl"
                     st->error_count += 1;
                 }
@@ -35408,9 +35726,9 @@ const char* extract_type_arg_name(ExprNode* expr) {
         for (int32_t it = 0; (((cur != NULL) && (cur->kind == EXPR_ADDRESS_OF))); it++) {
 #line 44 "src/main.vl"
             cur = cur->operand;
-            __loop_cont_345: __attribute__((unused));
+            __loop_cont_346: __attribute__((unused));
         }
-        __loop_break_345: __attribute__((unused));
+        __loop_break_346: __attribute__((unused));
 #line 45 "src/main.vl"
         if (((cur != NULL) && (cur->kind == EXPR_IDENT))) {
 #line 46 "src/main.vl"
@@ -35634,9 +35952,9 @@ const char* check_reflect_field_value(SymbolTable* st, ExprNode* expr) {
         cur_f = cur_f->next;
 #line 168 "src/main.vl"
         fi += 1;
-        __loop_cont_346: __attribute__((unused));
+        __loop_cont_347: __attribute__((unused));
     }
-    __loop_break_346: __attribute__((unused));
+    __loop_break_347: __attribute__((unused));
 #line 170 "src/main.vl"
     if ((cur_f != NULL)) {
 #line 171 "src/main.vl"
@@ -35879,9 +36197,9 @@ const char* mono_eval_const_str(Monomorphizer* m, ExprNode* e) {
                         cur_f = cur_f->next;
 #line 36 "src/main.vl"
                         fi += 1;
-                        __loop_cont_347: __attribute__((unused));
+                        __loop_cont_348: __attribute__((unused));
                     }
-                    __loop_break_347: __attribute__((unused));
+                    __loop_break_348: __attribute__((unused));
 #line 37 "src/main.vl"
                     if ((cur_f != NULL)) {
 #line 38 "src/main.vl"
@@ -36063,9 +36381,9 @@ const char* mono_infer_field_value_type(ScopeEntry* scope, ExprNode* e) {
                 cur_f = cur_f->next;
 #line 97 "src/main.vl"
                 fi += 1;
-                __loop_cont_348: __attribute__((unused));
+                __loop_cont_349: __attribute__((unused));
             }
-            __loop_break_348: __attribute__((unused));
+            __loop_break_349: __attribute__((unused));
 #line 98 "src/main.vl"
             if ((cur_f != NULL)) {
 #line 98 "src/main.vl"
@@ -36101,9 +36419,9 @@ bool mono_has_ident_in_reflect_expr(ExprNode* e, const char* name) {
                 }
 #line 112 "src/main.vl"
                 a = a->next;
-                __loop_cont_349: __attribute__((unused));
+                __loop_cont_350: __attribute__((unused));
             }
-            __loop_break_349: __attribute__((unused));
+            __loop_break_350: __attribute__((unused));
         }
     }
 #line 116 "src/main.vl"
@@ -36137,9 +36455,9 @@ bool mono_has_ident_in_reflect_expr(ExprNode* e, const char* name) {
         }
 #line 123 "src/main.vl"
         cur_a = cur_a->next;
-        __loop_cont_350: __attribute__((unused));
+        __loop_cont_351: __attribute__((unused));
     }
-    __loop_break_350: __attribute__((unused));
+    __loop_break_351: __attribute__((unused));
 #line 125 "src/main.vl"
     return false;
 }
@@ -36194,9 +36512,9 @@ bool mono_has_ident_in_reflect_stmt(StmtNode* s, const char* name) {
             }
 #line 142 "src/main.vl"
             cur = cur->next;
-            __loop_cont_351: __attribute__((unused));
+            __loop_cont_352: __attribute__((unused));
         }
-        __loop_break_351: __attribute__((unused));
+        __loop_break_352: __attribute__((unused));
     }
 #line 145 "src/main.vl"
     if ((s->kind == STMT_UNSAFE)) {
@@ -36301,9 +36619,9 @@ ExprNode* mono_subst_ident_in_expr(ExprNode* e, const char* name, int64_t val, i
             }
 #line 172 "src/main.vl"
             cur = cur->next;
-            __loop_cont_352: __attribute__((unused));
+            __loop_cont_353: __attribute__((unused));
         }
-        __loop_break_352: __attribute__((unused));
+        __loop_break_353: __attribute__((unused));
 #line 174 "src/main.vl"
         return make_struct_lit_expr(e->type_name, first_fi, e->line, e->col);
     }
@@ -36339,9 +36657,9 @@ ExprNode* mono_subst_ident_in_expr(ExprNode* e, const char* name, int64_t val, i
             }
 #line 182 "src/main.vl"
             cur = cur->next;
-            __loop_cont_353: __attribute__((unused));
+            __loop_cont_354: __attribute__((unused));
         }
-        __loop_break_353: __attribute__((unused));
+        __loop_break_354: __attribute__((unused));
 #line 184 "src/main.vl"
         ExprNode* lit = make_shelf_lit_expr(first_a, e->arg_count, e->type_name, e->line, e->col);
 #line 185 "src/main.vl"
@@ -36384,9 +36702,9 @@ ExprNode* mono_subst_ident_in_expr(ExprNode* e, const char* name, int64_t val, i
             }
 #line 194 "src/main.vl"
             cur = cur->next;
-            __loop_cont_354: __attribute__((unused));
+            __loop_cont_355: __attribute__((unused));
         }
-        __loop_break_354: __attribute__((unused));
+        __loop_break_355: __attribute__((unused));
 #line 196 "src/main.vl"
         return make_variant_expr(e->type_name, e->member_name, first_a, e->arg_count, e->line, e->col);
     }
@@ -36424,9 +36742,9 @@ ExprNode* mono_subst_ident_in_expr(ExprNode* e, const char* name, int64_t val, i
             }
 #line 205 "src/main.vl"
             cur = cur->next;
-            __loop_cont_355: __attribute__((unused));
+            __loop_cont_356: __attribute__((unused));
         }
-        __loop_break_355: __attribute__((unused));
+        __loop_break_356: __attribute__((unused));
 #line 207 "src/main.vl"
         ExprNode* res = make_call_expr(callee, first_a, e->arg_count, e->line, e->col);
 #line 208 "src/main.vl"
@@ -36513,9 +36831,9 @@ StmtNode* mono_subst_ident_in_stmt(StmtNode* s, const char* name, int64_t val, i
             }
 #line 236 "src/main.vl"
             cur = cur->next;
-            __loop_cont_356: __attribute__((unused));
+            __loop_cont_357: __attribute__((unused));
         }
-        __loop_break_356: __attribute__((unused));
+        __loop_break_357: __attribute__((unused));
 #line 238 "src/main.vl"
         return make_block_stmt(first_s, s->stmt_count, s->line, s->col);
     }
@@ -36572,9 +36890,9 @@ StmtNode* mono_subst_ident_in_stmt(StmtNode* s, const char* name, int64_t val, i
             }
 #line 256 "src/main.vl"
             cur_c = cur_c->next;
-            __loop_cont_357: __attribute__((unused));
+            __loop_cont_358: __attribute__((unused));
         }
-        __loop_break_357: __attribute__((unused));
+        __loop_break_358: __attribute__((unused));
 #line 258 "src/main.vl"
         return make_match_stmt(subj, first_c, s->case_count, s->line, s->col);
     }
@@ -36687,9 +37005,9 @@ StmtNode* mono_unroll_loop(Monomorphizer* m, StmtNode* s, ScopeEntry* scope, con
         }
 #line 298 "src/main.vl"
         k += 1;
-        __loop_cont_358: __attribute__((unused));
+        __loop_cont_359: __attribute__((unused));
     }
-    __loop_break_358: __attribute__((unused));
+    __loop_break_359: __attribute__((unused));
 #line 300 "src/main.vl"
     return make_block_stmt(first_unrolled, iter_count, s->line, s->col);
 }
@@ -36724,9 +37042,9 @@ bool mono_has_reflect_loops_in_stmt(StmtNode* s) {
             }
 #line 311 "src/main.vl"
             cur = cur->next;
-            __loop_cont_359: __attribute__((unused));
+            __loop_cont_360: __attribute__((unused));
         }
-        __loop_break_359: __attribute__((unused));
+        __loop_break_360: __attribute__((unused));
     }
 #line 314 "src/main.vl"
     if ((s->kind == STMT_UNSAFE)) {
@@ -36753,9 +37071,9 @@ bool mono_has_reflect_loops(StmtNode* first_decl) {
         }
 #line 324 "src/main.vl"
         cur = cur->next;
-        __loop_cont_360: __attribute__((unused));
+        __loop_cont_361: __attribute__((unused));
     }
-    __loop_break_360: __attribute__((unused));
+    __loop_break_361: __attribute__((unused));
 #line 326 "src/main.vl"
     return false;
 }
@@ -36838,9 +37156,9 @@ const char* mono_lit_elem_scan(ExprNode* e, ScopeEntry* scope, const char* fallb
         }
 #line 53 "src/main.vl"
         cur = cur->next;
-        __loop_cont_361: __attribute__((unused));
+        __loop_cont_362: __attribute__((unused));
     }
-    __loop_break_361: __attribute__((unused));
+    __loop_break_362: __attribute__((unused));
 #line 55 "src/main.vl"
     if ((!is_mixed)) {
 #line 55 "src/main.vl"
@@ -36934,9 +37252,9 @@ const char* mono_infer_type(ExprNode* e, ScopeEntry* scope) {
             }
 #line 84 "src/main.vl"
             cur = cur->next;
-            __loop_cont_362: __attribute__((unused));
+            __loop_cont_363: __attribute__((unused));
         }
-        __loop_break_362: __attribute__((unused));
+        __loop_break_363: __attribute__((unused));
     }
 #line 87 "src/main.vl"
     if (((e->kind == EXPR_SHELF_LIT) || (e->kind == EXPR_HEAP_SHELF_LIT))) {
@@ -37039,9 +37357,9 @@ const char* mono_infer_type(ExprNode* e, ScopeEntry* scope) {
             count += 1;
 #line 132 "src/main.vl"
             cur = cur->next;
-            __loop_cont_363: __attribute__((unused));
+            __loop_cont_364: __attribute__((unused));
         }
-        __loop_break_363: __attribute__((unused));
+        __loop_break_364: __attribute__((unused));
 #line 134 "src/main.vl"
         sb_append_char((&(sb)), ')');
 #line 135 "src/main.vl"
@@ -37108,9 +37426,9 @@ const char* mono_infer_type(ExprNode* e, ScopeEntry* scope) {
             expect_key = (!expect_key);
 #line 162 "src/main.vl"
             cur = cur->next;
-            __loop_cont_364: __attribute__((unused));
+            __loop_cont_365: __attribute__((unused));
         }
-        __loop_break_364: __attribute__((unused));
+        __loop_break_365: __attribute__((unused));
 #line 164 "src/main.vl"
         const char* hpfx = "";
 #line 165 "src/main.vl"
@@ -37531,9 +37849,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
             }
 #line 65 "src/main.vl"
             cur = cur->next;
-            __loop_cont_365: __attribute__((unused));
+            __loop_cont_366: __attribute__((unused));
         }
-        __loop_break_365: __attribute__((unused));
+        __loop_break_366: __attribute__((unused));
 #line 67 "src/main.vl"
         return make_struct_lit_expr(stype, first_fi, e->line, e->col);
     }
@@ -37572,9 +37890,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
             }
 #line 76 "src/main.vl"
             cur = cur->next;
-            __loop_cont_366: __attribute__((unused));
+            __loop_cont_367: __attribute__((unused));
         }
-        __loop_break_366: __attribute__((unused));
+        __loop_break_367: __attribute__((unused));
 #line 78 "src/main.vl"
         return make_variant_expr(kname, e->member_name, first_a, e->arg_count, e->line, e->col);
     }
@@ -37604,9 +37922,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
             }
 #line 85 "src/main.vl"
             cur = cur->next;
-            __loop_cont_367: __attribute__((unused));
+            __loop_cont_368: __attribute__((unused));
         }
-        __loop_break_367: __attribute__((unused));
+        __loop_break_368: __attribute__((unused));
 #line 87 "src/main.vl"
         ExprNode* lit = make_shelf_lit_expr(first_a, e->arg_count, e->type_name, e->line, e->col);
 #line 88 "src/main.vl"
@@ -37643,9 +37961,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
             }
 #line 96 "src/main.vl"
             cur = cur->next;
-            __loop_cont_368: __attribute__((unused));
+            __loop_cont_369: __attribute__((unused));
         }
-        __loop_break_368: __attribute__((unused));
+        __loop_break_369: __attribute__((unused));
 #line 98 "src/main.vl"
         ExprNode* lit = make_array_lit_expr(first_a, e->arg_count, e->line, e->col);
 #line 99 "src/main.vl"
@@ -37679,9 +37997,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
             }
 #line 107 "src/main.vl"
             cur = cur->next;
-            __loop_cont_369: __attribute__((unused));
+            __loop_cont_370: __attribute__((unused));
         }
-        __loop_break_369: __attribute__((unused));
+        __loop_break_370: __attribute__((unused));
 #line 109 "src/main.vl"
         ExprNode* lit = make_tuple_lit_expr(first_a, e->arg_count, e->line, e->col);
 #line 110 "src/main.vl"
@@ -37715,9 +38033,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
             }
 #line 118 "src/main.vl"
             cur = cur->next;
-            __loop_cont_370: __attribute__((unused));
+            __loop_cont_371: __attribute__((unused));
         }
-        __loop_break_370: __attribute__((unused));
+        __loop_break_371: __attribute__((unused));
 #line 120 "src/main.vl"
         ExprNode* lit = make_map_lit_expr(first_a, (e->arg_count / 2), e->line, e->col);
 #line 121 "src/main.vl"
@@ -37756,9 +38074,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
             }
 #line 130 "src/main.vl"
             cur = cur->next;
-            __loop_cont_371: __attribute__((unused));
+            __loop_cont_372: __attribute__((unused));
         }
-        __loop_break_371: __attribute__((unused));
+        __loop_break_372: __attribute__((unused));
 #line 132 "src/main.vl"
         if ((e->kind == EXPR_RING_LIT)) {
 #line 133 "src/main.vl"
@@ -37799,9 +38117,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
             }
 #line 147 "src/main.vl"
             cur = cur->next;
-            __loop_cont_372: __attribute__((unused));
+            __loop_cont_373: __attribute__((unused));
         }
-        __loop_break_372: __attribute__((unused));
+        __loop_break_373: __attribute__((unused));
 #line 149 "src/main.vl"
         ExprNode* callee = mono_clone_expr(m, e->callee, scope, params, args);
 #line 150 "src/main.vl"
@@ -37911,9 +38229,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
                             }
 #line 200 "src/main.vl"
                             ti += 1;
-                            __loop_cont_373: __attribute__((unused));
+                            __loop_cont_374: __attribute__((unused));
                         }
-                        __loop_break_373: __attribute__((unused));
+                        __loop_break_374: __attribute__((unused));
 #line 202 "src/main.vl"
                         for (int32_t it = 0; ((((cur_arg != NULL) && (p_scan != NULL)) && (count < exp_count))); it++) {
 #line 203 "src/main.vl"
@@ -37933,9 +38251,9 @@ ExprNode* mono_clone_expr(Monomorphizer* m, ExprNode* e, ScopeEntry* scope, cons
                             cur_arg = cur_arg->next;
 #line 209 "src/main.vl"
                             p_scan = p_scan->next;
-                            __loop_cont_374: __attribute__((unused));
+                            __loop_cont_375: __attribute__((unused));
                         }
-                        __loop_break_374: __attribute__((unused));
+                        __loop_break_375: __attribute__((unused));
 #line 211 "src/main.vl"
                         call_targs = sb_to_string((&(tsb)));
                     } else {
@@ -38097,9 +38415,9 @@ StmtNode* mono_clone_stmt(Monomorphizer* m, StmtNode* s, ScopeEntry* scope, cons
             }
 #line 63 "src/main.vl"
             cur_p = cur_p->next;
-            __loop_cont_375: __attribute__((unused));
+            __loop_cont_376: __attribute__((unused));
         }
-        __loop_break_375: __attribute__((unused));
+        __loop_break_376: __attribute__((unused));
 #line 65 "src/main.vl"
         return make_destructure_stmt(first_p, s->param_count, ve, s->is_mut, s->line, s->col);
     }
@@ -38208,9 +38526,9 @@ StmtNode* mono_clone_stmt(Monomorphizer* m, StmtNode* s, ScopeEntry* scope, cons
                         p_idx += 1;
 #line 111 "src/main.vl"
                         cur_p = cur_p->next;
-                        __loop_cont_377: __attribute__((unused));
+                        __loop_cont_378: __attribute__((unused));
                     }
-                    __loop_break_377: __attribute__((unused));
+                    __loop_break_378: __attribute__((unused));
                 }
 #line 114 "src/main.vl"
                 if ((first_s == NULL)) {
@@ -38227,9 +38545,9 @@ StmtNode* mono_clone_stmt(Monomorphizer* m, StmtNode* s, ScopeEntry* scope, cons
             }
 #line 117 "src/main.vl"
             cur = cur->next;
-            __loop_cont_376: __attribute__((unused));
+            __loop_cont_377: __attribute__((unused));
         }
-        __loop_break_376: __attribute__((unused));
+        __loop_break_377: __attribute__((unused));
 #line 119 "src/main.vl"
         return make_block_stmt(first_s, s->stmt_count, s->line, s->col);
     }
@@ -38276,9 +38594,9 @@ StmtNode* mono_clone_stmt(Monomorphizer* m, StmtNode* s, ScopeEntry* scope, cons
                 }
 #line 138 "src/main.vl"
                 cv = cv->next;
-                __loop_cont_379: __attribute__((unused));
+                __loop_cont_380: __attribute__((unused));
             }
-            __loop_break_379: __attribute__((unused));
+            __loop_break_380: __attribute__((unused));
 #line 140 "src/main.vl"
             StmtNode* c_body = mono_clone_stmt(m, cur_c->body, scope, params, args, ret_type);
 #line 141 "src/main.vl"
@@ -38297,9 +38615,9 @@ StmtNode* mono_clone_stmt(Monomorphizer* m, StmtNode* s, ScopeEntry* scope, cons
             }
 #line 144 "src/main.vl"
             cur_c = cur_c->next;
-            __loop_cont_378: __attribute__((unused));
+            __loop_cont_379: __attribute__((unused));
         }
-        __loop_break_378: __attribute__((unused));
+        __loop_break_379: __attribute__((unused));
 #line 146 "src/main.vl"
         return make_match_stmt(subj, first_case, s->case_count, s->line, s->col);
     }
@@ -38416,9 +38734,9 @@ TypeAliasEntry* mono_find_alias(Monomorphizer* m, const char* name) {
         }
 #line 19 "src/main.vl"
         cur = cur->next;
-        __loop_cont_380: __attribute__((unused));
+        __loop_cont_381: __attribute__((unused));
     }
-    __loop_break_380: __attribute__((unused));
+    __loop_break_381: __attribute__((unused));
 #line 21 "src/main.vl"
     return NULL;
 }
@@ -38450,9 +38768,9 @@ void mono_register_aliases(Monomorphizer* m, ProgramNode* prog) {
         }
 #line 39 "src/main.vl"
         cur = cur->next;
-        __loop_cont_381: __attribute__((unused));
+        __loop_cont_382: __attribute__((unused));
     }
-    __loop_break_381: __attribute__((unused));
+    __loop_break_382: __attribute__((unused));
 }
 
 #line 44 "src/main.vl"
@@ -38472,9 +38790,9 @@ const char* mono_canon_type(Monomorphizer* m, const char* t) {
         depth += 1;
 #line 50 "src/main.vl"
         base = copy_slice_to_string(base, 1, (((usize)strlen(base)) - 1));
-        __loop_cont_382: __attribute__((unused));
+        __loop_cont_383: __attribute__((unused));
     }
-    __loop_break_382: __attribute__((unused));
+    __loop_break_383: __attribute__((unused));
 #line 52 "src/main.vl"
     TypeAliasEntry* entry = mono_find_alias(m, base);
 #line 53 "src/main.vl"
@@ -38487,9 +38805,9 @@ const char* mono_canon_type(Monomorphizer* m, const char* t) {
             sb_append_char((&(sb)), '@');
 #line 57 "src/main.vl"
             depth -= 1;
-            __loop_cont_383: __attribute__((unused));
+            __loop_cont_384: __attribute__((unused));
         }
-        __loop_break_383: __attribute__((unused));
+        __loop_break_384: __attribute__((unused));
 #line 59 "src/main.vl"
         sb_append_str((&(sb)), entry->target);
 #line 60 "src/main.vl"
@@ -38513,9 +38831,9 @@ const char* mono_canon_type(Monomorphizer* m, const char* t) {
                 sb_append_char((&(sb)), '@');
 #line 68 "src/main.vl"
                 depth -= 1;
-                __loop_cont_384: __attribute__((unused));
+                __loop_cont_385: __attribute__((unused));
             }
-            __loop_break_384: __attribute__((unused));
+            __loop_break_385: __attribute__((unused));
 #line 69 "src/main.vl"
             sb_append_char((&(sb)), '[');
 #line 70 "src/main.vl"
@@ -38589,9 +38907,9 @@ void mono_alias_resolve_expr(Monomorphizer* m, ExprNode* e) {
             mono_alias_resolve_expr(m, cur->value);
 #line 103 "src/main.vl"
             cur = cur->next;
-            __loop_cont_385: __attribute__((unused));
+            __loop_cont_386: __attribute__((unused));
         }
-        __loop_break_385: __attribute__((unused));
+        __loop_break_386: __attribute__((unused));
     } else
 #line 105 "src/main.vl"
     if (((e->kind == EXPR_ARRAY_LIT) || (e->kind == EXPR_TUPLE_LIT))) {
@@ -38603,9 +38921,9 @@ void mono_alias_resolve_expr(Monomorphizer* m, ExprNode* e) {
             mono_alias_resolve_expr(m, cur_a);
 #line 109 "src/main.vl"
             cur_a = cur_a->next;
-            __loop_cont_386: __attribute__((unused));
+            __loop_cont_387: __attribute__((unused));
         }
-        __loop_break_386: __attribute__((unused));
+        __loop_break_387: __attribute__((unused));
     } else
 #line 111 "src/main.vl"
     if ((e->kind == EXPR_CALL)) {
@@ -38617,9 +38935,9 @@ void mono_alias_resolve_expr(Monomorphizer* m, ExprNode* e) {
             mono_alias_resolve_expr(m, cur_a);
 #line 115 "src/main.vl"
             cur_a = cur_a->next;
-            __loop_cont_387: __attribute__((unused));
+            __loop_cont_388: __attribute__((unused));
         }
-        __loop_break_387: __attribute__((unused));
+        __loop_break_388: __attribute__((unused));
     }
 }
 
@@ -38640,9 +38958,9 @@ void mono_alias_resolve_stmt(Monomorphizer* m, StmtNode* s) {
             mono_alias_resolve_stmt(m, cur);
 #line 127 "src/main.vl"
             cur = cur->next;
-            __loop_cont_388: __attribute__((unused));
+            __loop_cont_389: __attribute__((unused));
         }
-        __loop_break_388: __attribute__((unused));
+        __loop_break_389: __attribute__((unused));
     } else
 #line 129 "src/main.vl"
     if ((s->kind == STMT_VAR_DECL)) {
@@ -38661,9 +38979,9 @@ void mono_alias_resolve_stmt(Monomorphizer* m, StmtNode* s) {
             cur_p->type_name = mono_canon_type(m, cur_p->type_name);
 #line 136 "src/main.vl"
             cur_p = cur_p->next;
-            __loop_cont_389: __attribute__((unused));
+            __loop_cont_390: __attribute__((unused));
         }
-        __loop_break_389: __attribute__((unused));
+        __loop_break_390: __attribute__((unused));
 #line 138 "src/main.vl"
         mono_alias_resolve_expr(m, s->val_expr);
     } else
@@ -38734,16 +39052,16 @@ void mono_alias_resolve_stmt(Monomorphizer* m, StmtNode* s) {
                 mono_alias_resolve_expr(m, cur_val);
 #line 168 "src/main.vl"
                 cur_val = cur_val->next;
-                __loop_cont_391: __attribute__((unused));
+                __loop_cont_392: __attribute__((unused));
             }
-            __loop_break_391: __attribute__((unused));
+            __loop_break_392: __attribute__((unused));
 #line 170 "src/main.vl"
             mono_alias_resolve_stmt(m, cur_case->body);
 #line 171 "src/main.vl"
             cur_case = cur_case->next;
-            __loop_cont_390: __attribute__((unused));
+            __loop_cont_391: __attribute__((unused));
         }
-        __loop_break_390: __attribute__((unused));
+        __loop_break_391: __attribute__((unused));
     } else
 #line 173 "src/main.vl"
     if ((s->kind == STMT_EXPR)) {
@@ -38773,9 +39091,9 @@ void mono_alias_resolve_prog(Monomorphizer* m, ProgramNode* prog) {
                 cur_f->type_name = mono_canon_type(m, cur_f->type_name);
 #line 187 "src/main.vl"
                 cur_f = cur_f->next;
-                __loop_cont_393: __attribute__((unused));
+                __loop_cont_394: __attribute__((unused));
             }
-            __loop_break_393: __attribute__((unused));
+            __loop_break_394: __attribute__((unused));
 #line 190 "src/main.vl"
             FieldNode* cur_fd = cur->first_field;
 #line 191 "src/main.vl"
@@ -38784,9 +39102,9 @@ void mono_alias_resolve_prog(Monomorphizer* m, ProgramNode* prog) {
                 mono_alias_resolve_expr(m, cur_fd->default_value);
 #line 193 "src/main.vl"
                 cur_fd = cur_fd->next;
-                __loop_cont_394: __attribute__((unused));
+                __loop_cont_395: __attribute__((unused));
             }
-            __loop_break_394: __attribute__((unused));
+            __loop_break_395: __attribute__((unused));
         } else
 #line 195 "src/main.vl"
         if ((cur->kind == DECL_KIND)) {
@@ -38804,14 +39122,14 @@ void mono_alias_resolve_prog(Monomorphizer* m, ProgramNode* prog) {
                     cur_vf->type_name = mono_canon_type(m, cur_vf->type_name);
 #line 202 "src/main.vl"
                     cur_vf = cur_vf->next;
-                    __loop_cont_396: __attribute__((unused));
+                    __loop_cont_397: __attribute__((unused));
                 }
-                __loop_break_396: __attribute__((unused));
+                __loop_break_397: __attribute__((unused));
 #line 204 "src/main.vl"
                 v = v->next;
-                __loop_cont_395: __attribute__((unused));
+                __loop_cont_396: __attribute__((unused));
             }
-            __loop_break_395: __attribute__((unused));
+            __loop_break_396: __attribute__((unused));
         } else
 #line 206 "src/main.vl"
         if (((cur->kind == DECL_FUNCTION) || (cur->kind == DECL_EXTERN))) {
@@ -38823,9 +39141,9 @@ void mono_alias_resolve_prog(Monomorphizer* m, ProgramNode* prog) {
                 cur_p->type_name = mono_canon_type(m, cur_p->type_name);
 #line 210 "src/main.vl"
                 cur_p = cur_p->next;
-                __loop_cont_397: __attribute__((unused));
+                __loop_cont_398: __attribute__((unused));
             }
-            __loop_break_397: __attribute__((unused));
+            __loop_break_398: __attribute__((unused));
 #line 212 "src/main.vl"
             cur->return_type = mono_canon_type(m, cur->return_type);
 #line 213 "src/main.vl"
@@ -38833,9 +39151,9 @@ void mono_alias_resolve_prog(Monomorphizer* m, ProgramNode* prog) {
         }
 #line 215 "src/main.vl"
         cur = cur->next;
-        __loop_cont_392: __attribute__((unused));
+        __loop_cont_393: __attribute__((unused));
     }
-    __loop_break_392: __attribute__((unused));
+    __loop_break_393: __attribute__((unused));
 }
 
 #line 14 "src/main.vl"
@@ -38874,9 +39192,9 @@ StmtNode* mono_instantiate_struct(Monomorphizer* m, GenericTemplate* tmpl, const
         count += 1;
 #line 27 "src/main.vl"
         cur_f = cur_f->next;
-        __loop_cont_398: __attribute__((unused));
+        __loop_cont_399: __attribute__((unused));
     }
-    __loop_break_398: __attribute__((unused));
+    __loop_break_399: __attribute__((unused));
 #line 29 "src/main.vl"
     StmtNode* inst_s = make_data_decl(mangled_name, first_f, count, tmpl->node->align_bytes, tmpl->node->is_packed, tmpl->node->line, tmpl->node->col);
 #line 30 "src/main.vl"
@@ -38932,9 +39250,9 @@ StmtNode* mono_instantiate_kind(Monomorphizer* m, GenericTemplate* tmpl, const c
         count += 1;
 #line 53 "src/main.vl"
         cur_v = cur_v->next;
-        __loop_cont_399: __attribute__((unused));
+        __loop_cont_400: __attribute__((unused));
     }
-    __loop_break_399: __attribute__((unused));
+    __loop_break_400: __attribute__((unused));
 #line 55 "src/main.vl"
     StmtNode* inst_k = make_kind_decl(mangled_name, first_v, count, tmpl->node->line, tmpl->node->col);
 #line 56 "src/main.vl"
@@ -38993,9 +39311,9 @@ StmtNode* mono_instantiate_func(Monomorphizer* m, GenericTemplate* tmpl, const c
         count += 1;
 #line 80 "src/main.vl"
         cur_p = cur_p->next;
-        __loop_cont_400: __attribute__((unused));
+        __loop_cont_401: __attribute__((unused));
     }
-    __loop_break_400: __attribute__((unused));
+    __loop_break_401: __attribute__((unused));
 #line 82 "src/main.vl"
     const char* rt = mono_subst(tmpl->node->return_type, tmpl->type_params, type_args);
 #line 83 "src/main.vl"
@@ -39085,9 +39403,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
         }
 #line 120 "src/main.vl"
         cur = nxt;
-        __loop_cont_401: __attribute__((unused));
+        __loop_cont_402: __attribute__((unused));
     }
-    __loop_break_401: __attribute__((unused));
+    __loop_break_402: __attribute__((unused));
 #line 123 "src/main.vl"
     if (((m.first_template == NULL) && (!mono_has_reflect_loops(reg_first)))) {
 #line 124 "src/main.vl"
@@ -39119,9 +39437,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
                 f->type_name = mono_normalize_type(f->type_name);
 #line 140 "src/main.vl"
                 f = f->next;
-                __loop_cont_403: __attribute__((unused));
+                __loop_cont_404: __attribute__((unused));
             }
-            __loop_break_403: __attribute__((unused));
+            __loop_break_404: __attribute__((unused));
 #line 142 "src/main.vl"
             if ((trans_first == NULL)) {
 #line 142 "src/main.vl"
@@ -39150,9 +39468,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
                 }
 #line 151 "src/main.vl"
                 v = v->next;
-                __loop_cont_404: __attribute__((unused));
+                __loop_cont_405: __attribute__((unused));
             }
-            __loop_break_404: __attribute__((unused));
+            __loop_break_405: __attribute__((unused));
 #line 153 "src/main.vl"
             if ((trans_first == NULL)) {
 #line 153 "src/main.vl"
@@ -39208,9 +39526,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
                 scope = sc;
 #line 171 "src/main.vl"
                 cur_p = cur_p->next;
-                __loop_cont_405: __attribute__((unused));
+                __loop_cont_406: __attribute__((unused));
             }
-            __loop_break_405: __attribute__((unused));
+            __loop_break_406: __attribute__((unused));
 #line 173 "src/main.vl"
             mono_check_type((&(m)), r->return_type);
 #line 174 "src/main.vl"
@@ -39268,9 +39586,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
         }
 #line 188 "src/main.vl"
         r = nxt;
-        __loop_cont_402: __attribute__((unused));
+        __loop_cont_403: __attribute__((unused));
     }
-    __loop_break_402: __attribute__((unused));
+    __loop_break_403: __attribute__((unused));
 #line 192 "src/main.vl"
     for (int32_t it = 0; ((m.worklist_head != NULL)); it++) {
 #line 193 "src/main.vl"
@@ -39319,9 +39637,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
                 m.first_inst = entry;
             }
         }
-        __loop_cont_406: __attribute__((unused));
+        __loop_cont_407: __attribute__((unused));
     }
-    __loop_break_406: __attribute__((unused));
+    __loop_break_407: __attribute__((unused));
 #line 219 "src/main.vl"
     StmtNode* final_first = NULL;
 #line 220 "src/main.vl"
@@ -39353,9 +39671,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
         }
 #line 232 "src/main.vl"
         e = e->next;
-        __loop_cont_407: __attribute__((unused));
+        __loop_cont_408: __attribute__((unused));
     }
-    __loop_break_407: __attribute__((unused));
+    __loop_break_408: __attribute__((unused));
 #line 236 "src/main.vl"
     StmtNode* rd = trans_first;
 #line 237 "src/main.vl"
@@ -39380,9 +39698,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
         total_count += 1;
 #line 243 "src/main.vl"
         rd = nxt;
-        __loop_cont_408: __attribute__((unused));
+        __loop_cont_409: __attribute__((unused));
     }
-    __loop_break_408: __attribute__((unused));
+    __loop_break_409: __attribute__((unused));
 #line 247 "src/main.vl"
     e = m.first_inst;
 #line 248 "src/main.vl"
@@ -39408,9 +39726,9 @@ ProgramNode* monomorphize_program(ProgramNode* prog) {
         }
 #line 255 "src/main.vl"
         e = e->next;
-        __loop_cont_409: __attribute__((unused));
+        __loop_cont_410: __attribute__((unused));
     }
-    __loop_break_409: __attribute__((unused));
+    __loop_break_410: __attribute__((unused));
 #line 258 "src/main.vl"
     ProgramNode* final_prog = ((ProgramNode*)velo_mem_alloc(sizeof(ProgramNode), (size_t)(1)));
 #line 259 "src/main.vl"
@@ -39481,9 +39799,9 @@ const char* resolve_path_type_and_c(SymbolTable* st, const char* path, StringBui
         }
 #line 58 "src/main.vl"
         k += 1;
-        __loop_cont_410: __attribute__((unused));
+        __loop_cont_411: __attribute__((unused));
     }
-    __loop_break_410: __attribute__((unused));
+    __loop_break_411: __attribute__((unused));
 #line 62 "src/main.vl"
     if ((dot_pos == (-1))) {
 #line 63 "src/main.vl"
@@ -39521,9 +39839,9 @@ const char* resolve_path_type_and_c(SymbolTable* st, const char* path, StringBui
         for (int32_t it = 0; (((seg_end < plen) && velo_cmp_ne_u_s(path[seg_end], '.'))); it++) {
 #line 82 "src/main.vl"
             seg_end += 1;
-            __loop_cont_412: __attribute__((unused));
+            __loop_cont_413: __attribute__((unused));
         }
-        __loop_break_412: __attribute__((unused));
+        __loop_break_413: __attribute__((unused));
 #line 84 "src/main.vl"
         const char* field_name = copy_slice_to_string(path, seg_start, (seg_end - seg_start));
 #line 85 "src/main.vl"
@@ -39558,9 +39876,9 @@ const char* resolve_path_type_and_c(SymbolTable* st, const char* path, StringBui
         }
 #line 104 "src/main.vl"
         seg_start = (seg_end + 1);
-        __loop_cont_411: __attribute__((unused));
+        __loop_cont_412: __attribute__((unused));
     }
-    __loop_break_411: __attribute__((unused));
+    __loop_break_412: __attribute__((unused));
 #line 106 "src/main.vl"
     return curr_type;
 }
@@ -39635,9 +39953,9 @@ int32_t build_interp_fmt_and_args(SymbolTable* st, const char* raw, int32_t line
             for (int32_t it = 0; ((((scan_j < len) && velo_cmp_ne_u_s(raw[scan_j], '}')) && velo_cmp_ne_u_s(raw[scan_j], '{'))); it++) {
 #line 138 "src/main.vl"
                 scan_j += 1;
-                __loop_cont_414: __attribute__((unused));
+                __loop_cont_415: __attribute__((unused));
             }
-            __loop_break_414: __attribute__((unused));
+            __loop_break_415: __attribute__((unused));
 #line 140 "src/main.vl"
             if ((((scan_j < len) && velo_cmp_eq_u_s(raw[scan_j], '}')) && (scan_j > (scan_i + 1)))) {
 #line 141 "src/main.vl"
@@ -39648,9 +39966,9 @@ int32_t build_interp_fmt_and_args(SymbolTable* st, const char* raw, int32_t line
         }
 #line 145 "src/main.vl"
         scan_i += 1;
-        __loop_cont_413: __attribute__((unused));
+        __loop_cont_414: __attribute__((unused));
     }
-    __loop_break_413: __attribute__((unused));
+    __loop_break_414: __attribute__((unused));
 #line 148 "src/main.vl"
     if ((!has_interp)) {
 #line 148 "src/main.vl"
@@ -39687,9 +40005,9 @@ int32_t build_interp_fmt_and_args(SymbolTable* st, const char* raw, int32_t line
 #line 164 "src/main.vl"
                     close_idx += 1;
                 }
-                __loop_cont_416: __attribute__((unused));
+                __loop_cont_417: __attribute__((unused));
             }
-            __loop_break_416: __attribute__((unused));
+            __loop_break_417: __attribute__((unused));
 #line 167 "src/main.vl"
             if ((((close_idx < len) && velo_cmp_eq_u_s(depth, 0)) && (close_idx > (idx + 1)))) {
 #line 168 "src/main.vl"
@@ -39735,15 +40053,15 @@ int32_t build_interp_fmt_and_args(SymbolTable* st, const char* raw, int32_t line
                         }
 #line 191 "src/main.vl"
                         pi += 1;
-                        __loop_cont_417: __attribute__((unused));
+                        __loop_cont_418: __attribute__((unused));
                     }
-                    __loop_break_417: __attribute__((unused));
+                    __loop_break_418: __attribute__((unused));
 #line 193 "src/main.vl"
                     sb_append_char(out_fmt, '}');
 #line 194 "src/main.vl"
                     idx = (close_idx + 1);
 #line 195 "src/main.vl"
-                    goto __loop_cont_415;
+                    goto __loop_cont_416;
                 }
 #line 197 "src/main.vl"
                 const char* c_expr_str = sb_to_string((&(c_sb)));
@@ -39863,9 +40181,9 @@ int32_t build_interp_fmt_and_args(SymbolTable* st, const char* raw, int32_t line
 #line 249 "src/main.vl"
             idx += 1;
         }
-        __loop_cont_415: __attribute__((unused));
+        __loop_cont_416: __attribute__((unused));
     }
-    __loop_break_415: __attribute__((unused));
+    __loop_break_416: __attribute__((unused));
 #line 252 "src/main.vl"
     if ((arg_count == 0)) {
 #line 252 "src/main.vl"
@@ -40115,9 +40433,9 @@ void emit_io_stdlib_call(StringBuilder* sb, SymbolTable* st, const char* member,
         }
 #line 176 "src/main.vl"
         cur = cur->next;
-        __loop_cont_418: __attribute__((unused));
+        __loop_cont_419: __attribute__((unused));
     }
-    __loop_break_418: __attribute__((unused));
+    __loop_break_419: __attribute__((unused));
 #line 178 "src/main.vl"
     sb_append_char(sb, ')');
 }
@@ -40257,9 +40575,9 @@ void emit_str_call(StringBuilder* sb, SymbolTable* st, const char* member, ExprN
         }
 #line 252 "src/main.vl"
         a = a->next;
-        __loop_cont_419: __attribute__((unused));
+        __loop_cont_420: __attribute__((unused));
     }
-    __loop_break_419: __attribute__((unused));
+    __loop_break_420: __attribute__((unused));
 #line 254 "src/main.vl"
     sb_append_char(sb, ')');
 }
@@ -40487,9 +40805,9 @@ const char* map_type_to_c(const char* type_name) {
             buf[i] = base_c[i];
 #line 92 "src/main.vl"
             i += 1;
-            __loop_cont_420: __attribute__((unused));
+            __loop_cont_421: __attribute__((unused));
         }
-        __loop_break_420: __attribute__((unused));
+        __loop_break_421: __attribute__((unused));
 #line 94 "src/main.vl"
         buf[((usize)strlen(base_c))] = '*';
 #line 95 "src/main.vl"
@@ -40769,15 +41087,15 @@ void emit_map_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
 #line 93 "src/main.vl"
         if ((v_node == NULL)) {
 #line 93 "src/main.vl"
-            goto __loop_break_421;
+            goto __loop_break_422;
         }
 #line 94 "src/main.vl"
         count += 1;
 #line 94 "src/main.vl"
         cur = v_node->next;
-        __loop_cont_421: __attribute__((unused));
+        __loop_cont_422: __attribute__((unused));
     }
-    __loop_break_421: __attribute__((unused));
+    __loop_break_422: __attribute__((unused));
 #line 96 "src/main.vl"
     const char* fn_lit = "velo_map_create_lit((usize)sizeof(";
 #line 97 "src/main.vl"
@@ -40823,7 +41141,7 @@ void emit_map_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
 #line 105 "src/main.vl"
         if ((v_node == NULL)) {
 #line 105 "src/main.vl"
-            goto __loop_break_422;
+            goto __loop_break_423;
         }
 #line 106 "src/main.vl"
         if ((!first)) {
@@ -40840,9 +41158,9 @@ void emit_map_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         sb_append_char(sb, ')');
 #line 108 "src/main.vl"
         cur = v_node->next;
-        __loop_cont_422: __attribute__((unused));
+        __loop_cont_423: __attribute__((unused));
     }
-    __loop_break_422: __attribute__((unused));
+    __loop_break_423: __attribute__((unused));
 #line 110 "src/main.vl"
     sb_append_str(sb, " }, (");
 #line 111 "src/main.vl"
@@ -40865,7 +41183,7 @@ void emit_map_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
 #line 116 "src/main.vl"
         if ((v_node == NULL)) {
 #line 116 "src/main.vl"
-            goto __loop_break_423;
+            goto __loop_break_424;
         }
 #line 117 "src/main.vl"
         if ((!first)) {
@@ -40882,9 +41200,9 @@ void emit_map_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         sb_append_char(sb, ')');
 #line 119 "src/main.vl"
         cur = v_node->next;
-        __loop_cont_423: __attribute__((unused));
+        __loop_cont_424: __attribute__((unused));
     }
-    __loop_break_423: __attribute__((unused));
+    __loop_break_424: __attribute__((unused));
 #line 121 "src/main.vl"
     sb_append_str(sb, " })");
 }
@@ -41890,9 +42208,9 @@ void emit_bitset_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         count += 1;
 #line 49 "src/main.vl"
         cur = cur->next;
-        __loop_cont_424: __attribute__((unused));
+        __loop_cont_425: __attribute__((unused));
     }
-    __loop_break_424: __attribute__((unused));
+    __loop_break_425: __attribute__((unused));
 #line 51 "src/main.vl"
     sb_append_str(sb, "velo_bitset_create_lit(");
 #line 52 "src/main.vl"
@@ -41920,9 +42238,9 @@ void emit_bitset_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         sb_append_char(sb, ')');
 #line 62 "src/main.vl"
         cur = cur->next;
-        __loop_cont_425: __attribute__((unused));
+        __loop_cont_426: __attribute__((unused));
     }
-    __loop_break_425: __attribute__((unused));
+    __loop_break_426: __attribute__((unused));
 #line 64 "src/main.vl"
     sb_append_str(sb, " })");
 }
@@ -42101,9 +42419,9 @@ void emit_ring_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         count += 1;
 #line 60 "src/main.vl"
         cur = cur->next;
-        __loop_cont_426: __attribute__((unused));
+        __loop_cont_427: __attribute__((unused));
     }
-    __loop_break_426: __attribute__((unused));
+    __loop_break_427: __attribute__((unused));
 #line 62 "src/main.vl"
     sb_append_str(sb, "velo_ring_create_lit((usize)sizeof(");
 #line 63 "src/main.vl"
@@ -42144,9 +42462,9 @@ void emit_ring_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         sb_append_char(sb, ')');
 #line 80 "src/main.vl"
         cur = cur->next;
-        __loop_cont_427: __attribute__((unused));
+        __loop_cont_428: __attribute__((unused));
     }
-    __loop_break_427: __attribute__((unused));
+    __loop_break_428: __attribute__((unused));
 #line 82 "src/main.vl"
     sb_append_str(sb, " })");
 }
@@ -42938,9 +43256,9 @@ void emit_source_path(StringBuilder* sb, SymbolTable* st) {
             }
 #line 12 "src/main.vl"
             i += 1;
-            __loop_cont_428: __attribute__((unused));
+            __loop_cont_429: __attribute__((unused));
         }
-        __loop_break_428: __attribute__((unused));
+        __loop_break_429: __attribute__((unused));
     } else {
 #line 15 "src/main.vl"
         sb_append_str(sb, "<source>");
@@ -43011,9 +43329,9 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
                     sb_append_str(sb, ":\n");
 #line 35 "src/main.vl"
                     val = val->next;
-                    __loop_cont_430: __attribute__((unused));
+                    __loop_cont_431: __attribute__((unused));
                 }
-                __loop_break_430: __attribute__((unused));
+                __loop_break_431: __attribute__((unused));
 #line 37 "src/main.vl"
                 sb_append_indent(sb, indent);
 #line 38 "src/main.vl"
@@ -43068,9 +43386,9 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
                             cur_b = cur_b->next;
 #line 62 "src/main.vl"
                             cur_f = cur_f->next;
-                            __loop_cont_431: __attribute__((unused));
+                            __loop_cont_432: __attribute__((unused));
                         }
-                        __loop_break_431: __attribute__((unused));
+                        __loop_break_432: __attribute__((unused));
                     } else
 #line 64 "src/main.vl"
                     if ((v_sym->payload_type != NULL)) {
@@ -43114,9 +43432,9 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
             sb_append_str(sb, "}\n");
 #line 86 "src/main.vl"
             cur_case = cur_case->next;
-            __loop_cont_429: __attribute__((unused));
+            __loop_cont_430: __attribute__((unused));
         }
-        __loop_break_429: __attribute__((unused));
+        __loop_break_430: __attribute__((unused));
 #line 88 "src/main.vl"
         sb_append_indent(sb, indent);
 #line 89 "src/main.vl"
@@ -43139,9 +43457,9 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
         }
 #line 100 "src/main.vl"
         chk_c = chk_c->next;
-        __loop_cont_432: __attribute__((unused));
+        __loop_cont_433: __attribute__((unused));
     }
-    __loop_break_432: __attribute__((unused));
+    __loop_break_433: __attribute__((unused));
 #line 103 "src/main.vl"
     if ((is_str_type || has_string_case)) {
 #line 104 "src/main.vl"
@@ -43212,9 +43530,9 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
                     first_val = false;
 #line 141 "src/main.vl"
                     val = val->next;
-                    __loop_cont_434: __attribute__((unused));
+                    __loop_cont_435: __attribute__((unused));
                 }
-                __loop_break_434: __attribute__((unused));
+                __loop_break_435: __attribute__((unused));
 #line 143 "src/main.vl"
                 sb_append_str(sb, ") {\n");
 #line 144 "src/main.vl"
@@ -43228,9 +43546,9 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
             }
 #line 149 "src/main.vl"
             cur_case = cur_case->next;
-            __loop_cont_433: __attribute__((unused));
+            __loop_cont_434: __attribute__((unused));
         }
-        __loop_break_433: __attribute__((unused));
+        __loop_break_434: __attribute__((unused));
 #line 152 "src/main.vl"
         if ((default_case != NULL)) {
 #line 153 "src/main.vl"
@@ -43295,9 +43613,9 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
                 sb_append_str(sb, ":\n");
 #line 188 "src/main.vl"
                 val = val->next;
-                __loop_cont_436: __attribute__((unused));
+                __loop_cont_437: __attribute__((unused));
             }
-            __loop_break_436: __attribute__((unused));
+            __loop_break_437: __attribute__((unused));
 #line 190 "src/main.vl"
             sb_append_indent(sb, indent);
 #line 191 "src/main.vl"
@@ -43315,9 +43633,9 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
         sb_append_str(sb, "}\n");
 #line 198 "src/main.vl"
         cur_case = cur_case->next;
-        __loop_cont_435: __attribute__((unused));
+        __loop_cont_436: __attribute__((unused));
     }
-    __loop_break_435: __attribute__((unused));
+    __loop_break_436: __attribute__((unused));
 #line 200 "src/main.vl"
     sb_append_indent(sb, indent);
 #line 201 "src/main.vl"
@@ -43337,9 +43655,9 @@ bool or_types_contains(OrTypeNode* list, const char* type_name) {
         }
 #line 25 "src/main.vl"
         cur = cur->next;
-        __loop_cont_437: __attribute__((unused));
+        __loop_cont_438: __attribute__((unused));
     }
-    __loop_break_437: __attribute__((unused));
+    __loop_break_438: __attribute__((unused));
 #line 27 "src/main.vl"
     return false;
 }
@@ -43393,9 +43711,9 @@ void scan_stmt_or_types(StmtNode* s, OrTypeNode** list) {
             scan_stmt_or_types(cur, list);
 #line 50 "src/main.vl"
             cur = cur->next;
-            __loop_cont_438: __attribute__((unused));
+            __loop_cont_439: __attribute__((unused));
         }
-        __loop_break_438: __attribute__((unused));
+        __loop_break_439: __attribute__((unused));
     } else
 #line 52 "src/main.vl"
     if ((s->kind == STMT_IF)) {
@@ -43435,9 +43753,9 @@ void scan_stmt_or_types(StmtNode* s, OrTypeNode** list) {
             }
 #line 65 "src/main.vl"
             c = c->next;
-            __loop_cont_439: __attribute__((unused));
+            __loop_cont_440: __attribute__((unused));
         }
-        __loop_break_439: __attribute__((unused));
+        __loop_break_440: __attribute__((unused));
     }
 }
 
@@ -43460,9 +43778,9 @@ void scan_program_or_types(ProgramNode* prog, OrTypeNode** list) {
                 }
 #line 79 "src/main.vl"
                 cur_f = cur_f->next;
-                __loop_cont_441: __attribute__((unused));
+                __loop_cont_442: __attribute__((unused));
             }
-            __loop_break_441: __attribute__((unused));
+            __loop_break_442: __attribute__((unused));
         } else
 #line 81 "src/main.vl"
         if ((cur->kind == DECL_KIND)) {
@@ -43486,14 +43804,14 @@ void scan_program_or_types(ProgramNode* prog, OrTypeNode** list) {
                     }
 #line 92 "src/main.vl"
                     cf = cf->next;
-                    __loop_cont_443: __attribute__((unused));
+                    __loop_cont_444: __attribute__((unused));
                 }
-                __loop_break_443: __attribute__((unused));
+                __loop_break_444: __attribute__((unused));
 #line 94 "src/main.vl"
                 cv = cv->next;
-                __loop_cont_442: __attribute__((unused));
+                __loop_cont_443: __attribute__((unused));
             }
-            __loop_break_442: __attribute__((unused));
+            __loop_break_443: __attribute__((unused));
         } else
 #line 96 "src/main.vl"
         if (((cur->kind == DECL_FUNCTION) || (cur->kind == DECL_EXTERN))) {
@@ -43513,9 +43831,9 @@ void scan_program_or_types(ProgramNode* prog, OrTypeNode** list) {
                 }
 #line 105 "src/main.vl"
                 cur_p = cur_p->next;
-                __loop_cont_444: __attribute__((unused));
+                __loop_cont_445: __attribute__((unused));
             }
-            __loop_break_444: __attribute__((unused));
+            __loop_break_445: __attribute__((unused));
 #line 107 "src/main.vl"
             if ((cur->body != NULL)) {
 #line 108 "src/main.vl"
@@ -43532,9 +43850,9 @@ void scan_program_or_types(ProgramNode* prog, OrTypeNode** list) {
         }
 #line 115 "src/main.vl"
         cur = cur->next;
-        __loop_cont_440: __attribute__((unused));
+        __loop_cont_441: __attribute__((unused));
     }
-    __loop_break_440: __attribute__((unused));
+    __loop_break_441: __attribute__((unused));
 }
 
 #line 119 "src/main.vl"
@@ -43625,9 +43943,9 @@ void emit_or_type_declarations(StringBuilder* sb, OrTypeNode* list) {
         }
 #line 164 "src/main.vl"
         cur = cur->next;
-        __loop_cont_445: __attribute__((unused));
+        __loop_cont_446: __attribute__((unused));
     }
-    __loop_break_445: __attribute__((unused));
+    __loop_break_446: __attribute__((unused));
 }
 
 #line 168 "src/main.vl"
@@ -43677,9 +43995,9 @@ void emit_fail_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t 
         emit_c_cleanup(sb, st, cur_d, (indent + 1), defers);
 #line 187 "src/main.vl"
         cur_d = cur_d->next;
-        __loop_cont_446: __attribute__((unused));
+        __loop_cont_447: __attribute__((unused));
     }
-    __loop_break_446: __attribute__((unused));
+    __loop_break_447: __attribute__((unused));
 #line 189 "src/main.vl"
     sb_append_indent(sb, (indent + 1));
 #line 190 "src/main.vl"
@@ -43734,9 +44052,9 @@ void emit_or_return_var_decl(StringBuilder* sb, SymbolTable* st, StmtNode* stmt,
         emit_c_cleanup(sb, st, cur_d, (indent + 1), defers);
 #line 208 "src/main.vl"
         cur_d = cur_d->next;
-        __loop_cont_447: __attribute__((unused));
+        __loop_cont_448: __attribute__((unused));
     }
-    __loop_break_447: __attribute__((unused));
+    __loop_break_448: __attribute__((unused));
 #line 210 "src/main.vl"
     sb_append_indent(sb, (indent + 1));
 #line 210 "src/main.vl"
@@ -43811,9 +44129,9 @@ void emit_or_return_assign(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, i
         emit_c_cleanup(sb, st, cur_d, (indent + 1), defers);
 #line 227 "src/main.vl"
         cur_d = cur_d->next;
-        __loop_cont_448: __attribute__((unused));
+        __loop_cont_449: __attribute__((unused));
     }
-    __loop_break_448: __attribute__((unused));
+    __loop_break_449: __attribute__((unused));
 #line 229 "src/main.vl"
     sb_append_indent(sb, (indent + 1));
 #line 229 "src/main.vl"
@@ -43888,9 +44206,9 @@ void emit_or_return_expr(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int
         emit_c_cleanup(sb, st, cur_d, (indent + 1), defers);
 #line 246 "src/main.vl"
         cur_d = cur_d->next;
-        __loop_cont_449: __attribute__((unused));
+        __loop_cont_450: __attribute__((unused));
     }
-    __loop_break_449: __attribute__((unused));
+    __loop_break_450: __attribute__((unused));
 #line 248 "src/main.vl"
     sb_append_indent(sb, (indent + 1));
 #line 248 "src/main.vl"
@@ -44107,9 +44425,9 @@ void emit_return_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_
             emit_c_cleanup(sb, st, cur_d, (indent + 1), defers);
 #line 338 "src/main.vl"
             cur_d = cur_d->next;
-            __loop_cont_450: __attribute__((unused));
+            __loop_cont_451: __attribute__((unused));
         }
-        __loop_break_450: __attribute__((unused));
+        __loop_break_451: __attribute__((unused));
 #line 340 "src/main.vl"
         sb_append_indent(sb, (indent + 1));
 #line 341 "src/main.vl"
@@ -44138,9 +44456,9 @@ void emit_return_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_
         emit_c_cleanup(sb, st, cur_d, indent, defers);
 #line 355 "src/main.vl"
         cur_d = cur_d->next;
-        __loop_cont_451: __attribute__((unused));
+        __loop_cont_452: __attribute__((unused));
     }
-    __loop_break_451: __attribute__((unused));
+    __loop_break_452: __attribute__((unused));
 #line 357 "src/main.vl"
     sb_append_indent(sb, indent);
 #line 358 "src/main.vl"
@@ -44216,9 +44534,9 @@ void emit_array_var_decl(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int
             }
 #line 46 "src/main.vl"
             cur = cur->next;
-            __loop_cont_452: __attribute__((unused));
+            __loop_cont_453: __attribute__((unused));
         }
-        __loop_break_452: __attribute__((unused));
+        __loop_break_453: __attribute__((unused));
 #line 48 "src/main.vl"
         sb_append_str(sb, " };\n");
 #line 49 "src/main.vl"
@@ -44297,9 +44615,9 @@ void emit_array_lit(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         }
 #line 89 "src/main.vl"
         cur = cur->next;
-        __loop_cont_453: __attribute__((unused));
+        __loop_cont_454: __attribute__((unused));
     }
-    __loop_break_453: __attribute__((unused));
+    __loop_break_454: __attribute__((unused));
 #line 91 "src/main.vl"
     sb_append_str(sb, " })");
 }
@@ -44377,9 +44695,9 @@ bool tuple_types_contains(TupleTypeNode* list, const char* type_name) {
         }
 #line 26 "src/main.vl"
         cur = cur->next;
-        __loop_cont_454: __attribute__((unused));
+        __loop_cont_455: __attribute__((unused));
     }
-    __loop_break_454: __attribute__((unused));
+    __loop_break_455: __attribute__((unused));
 #line 28 "src/main.vl"
     return false;
 }
@@ -44434,9 +44752,9 @@ void tuple_types_add(TupleTypeNode** list, const char* type_name) {
         tuple_types_add(list, tuple_elem_type(type_name, i));
 #line 53 "src/main.vl"
         i += 1;
-        __loop_cont_455: __attribute__((unused));
+        __loop_cont_456: __attribute__((unused));
     }
-    __loop_break_455: __attribute__((unused));
+    __loop_break_456: __attribute__((unused));
 #line 56 "src/main.vl"
     TupleTypeNode* node = ((TupleTypeNode*)velo_mem_alloc(sizeof(TupleTypeNode), (size_t)(1)));
 #line 57 "src/main.vl"
@@ -44471,9 +44789,9 @@ void scan_expr_tuple_types(ExprNode* e, TupleTypeNode** list) {
             scan_expr_tuple_types(cur, list);
 #line 72 "src/main.vl"
             cur = cur->next;
-            __loop_cont_456: __attribute__((unused));
+            __loop_cont_457: __attribute__((unused));
         }
-        __loop_break_456: __attribute__((unused));
+        __loop_break_457: __attribute__((unused));
     } else
 #line 74 "src/main.vl"
     if ((e->kind == EXPR_BINARY)) {
@@ -44511,9 +44829,9 @@ void scan_expr_tuple_types(ExprNode* e, TupleTypeNode** list) {
             scan_expr_tuple_types(cur, list);
 #line 89 "src/main.vl"
             cur = cur->next;
-            __loop_cont_457: __attribute__((unused));
+            __loop_cont_458: __attribute__((unused));
         }
-        __loop_break_457: __attribute__((unused));
+        __loop_break_458: __attribute__((unused));
     } else
 #line 91 "src/main.vl"
     if ((e->kind == EXPR_IF)) {
@@ -44534,9 +44852,9 @@ void scan_expr_tuple_types(ExprNode* e, TupleTypeNode** list) {
             scan_expr_tuple_types(cur_init->value, list);
 #line 99 "src/main.vl"
             cur_init = cur_init->next;
-            __loop_cont_458: __attribute__((unused));
+            __loop_cont_459: __attribute__((unused));
         }
-        __loop_break_458: __attribute__((unused));
+        __loop_break_459: __attribute__((unused));
     }
 }
 
@@ -44567,9 +44885,9 @@ void scan_stmt_tuple_types(StmtNode* s, TupleTypeNode** list) {
             }
 #line 116 "src/main.vl"
             cur_p = cur_p->next;
-            __loop_cont_459: __attribute__((unused));
+            __loop_cont_460: __attribute__((unused));
         }
-        __loop_break_459: __attribute__((unused));
+        __loop_break_460: __attribute__((unused));
     } else
 #line 118 "src/main.vl"
     if ((s->kind == STMT_VAR_DECL)) {
@@ -44603,9 +44921,9 @@ void scan_stmt_tuple_types(StmtNode* s, TupleTypeNode** list) {
             scan_stmt_tuple_types(cur, list);
 #line 131 "src/main.vl"
             cur = cur->next;
-            __loop_cont_460: __attribute__((unused));
+            __loop_cont_461: __attribute__((unused));
         }
-        __loop_break_460: __attribute__((unused));
+        __loop_break_461: __attribute__((unused));
     } else
 #line 133 "src/main.vl"
     if ((s->kind == STMT_IF)) {
@@ -44658,16 +44976,16 @@ void scan_stmt_tuple_types(StmtNode* s, TupleTypeNode** list) {
                 scan_expr_tuple_types(v, list);
 #line 152 "src/main.vl"
                 v = v->next;
-                __loop_cont_462: __attribute__((unused));
+                __loop_cont_463: __attribute__((unused));
             }
-            __loop_break_462: __attribute__((unused));
+            __loop_break_463: __attribute__((unused));
 #line 153 "src/main.vl"
             scan_stmt_tuple_types(c->body, list);
 #line 154 "src/main.vl"
             c = c->next;
-            __loop_cont_461: __attribute__((unused));
+            __loop_cont_462: __attribute__((unused));
         }
-        __loop_break_461: __attribute__((unused));
+        __loop_break_462: __attribute__((unused));
     }
 }
 
@@ -44697,9 +45015,9 @@ void scan_program_tuple_types(ProgramNode* prog, TupleTypeNode** list) {
                 tuple_types_add(list, cur_p->type_name);
 #line 168 "src/main.vl"
                 cur_p = cur_p->next;
-                __loop_cont_464: __attribute__((unused));
+                __loop_cont_465: __attribute__((unused));
             }
-            __loop_break_464: __attribute__((unused));
+            __loop_break_465: __attribute__((unused));
 #line 170 "src/main.vl"
             scan_stmt_tuple_types(cur->body, list);
         } else
@@ -44713,9 +45031,9 @@ void scan_program_tuple_types(ProgramNode* prog, TupleTypeNode** list) {
                 tuple_types_add(list, cur_f->type_name);
 #line 175 "src/main.vl"
                 cur_f = cur_f->next;
-                __loop_cont_465: __attribute__((unused));
+                __loop_cont_466: __attribute__((unused));
             }
-            __loop_break_465: __attribute__((unused));
+            __loop_break_466: __attribute__((unused));
         } else
 #line 177 "src/main.vl"
         if ((cur->kind == DECL_EXTERN)) {
@@ -44732,9 +45050,9 @@ void scan_program_tuple_types(ProgramNode* prog, TupleTypeNode** list) {
                 tuple_types_add(list, cur_p->type_name);
 #line 182 "src/main.vl"
                 cur_p = cur_p->next;
-                __loop_cont_466: __attribute__((unused));
+                __loop_cont_467: __attribute__((unused));
             }
-            __loop_break_466: __attribute__((unused));
+            __loop_break_467: __attribute__((unused));
         } else
 #line 184 "src/main.vl"
         if ((cur->kind == STMT_VAR_DECL)) {
@@ -44743,9 +45061,9 @@ void scan_program_tuple_types(ProgramNode* prog, TupleTypeNode** list) {
         }
 #line 187 "src/main.vl"
         cur = cur->next;
-        __loop_cont_463: __attribute__((unused));
+        __loop_cont_464: __attribute__((unused));
     }
-    __loop_break_463: __attribute__((unused));
+    __loop_break_464: __attribute__((unused));
 }
 
 #line 191 "src/main.vl"
@@ -44786,9 +45104,9 @@ void emit_tuple_declarations(StringBuilder* sb, TupleTypeNode* list) {
             sb_append_str(sb, ";\n");
 #line 209 "src/main.vl"
             i += 1;
-            __loop_cont_468: __attribute__((unused));
+            __loop_cont_469: __attribute__((unused));
         }
-        __loop_break_468: __attribute__((unused));
+        __loop_break_469: __attribute__((unused));
 #line 211 "src/main.vl"
         sb_append_str(sb, "} ");
 #line 212 "src/main.vl"
@@ -44797,9 +45115,9 @@ void emit_tuple_declarations(StringBuilder* sb, TupleTypeNode* list) {
         sb_append_str(sb, ";\n#endif\n\n");
 #line 214 "src/main.vl"
         cur = cur->next;
-        __loop_cont_467: __attribute__((unused));
+        __loop_cont_468: __attribute__((unused));
     }
-    __loop_break_467: __attribute__((unused));
+    __loop_break_468: __attribute__((unused));
 }
 
 #line 218 "src/main.vl"
@@ -44842,9 +45160,9 @@ void emit_tuple_lit(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         idx += 1;
 #line 238 "src/main.vl"
         cur = cur->next;
-        __loop_cont_469: __attribute__((unused));
+        __loop_cont_470: __attribute__((unused));
     }
-    __loop_break_469: __attribute__((unused));
+    __loop_break_470: __attribute__((unused));
 #line 240 "src/main.vl"
     sb_append_str(sb, " }");
 }
@@ -44918,9 +45236,9 @@ void emit_destructure_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, i
             emit_c_cleanup(sb, st, cur_d, (indent + 1), defers);
 #line 272 "src/main.vl"
             cur_d = cur_d->next;
-            __loop_cont_470: __attribute__((unused));
+            __loop_cont_471: __attribute__((unused));
         }
-        __loop_break_470: __attribute__((unused));
+        __loop_break_471: __attribute__((unused));
 #line 274 "src/main.vl"
         sb_append_indent(sb, (indent + 1));
 #line 274 "src/main.vl"
@@ -44970,9 +45288,9 @@ void emit_destructure_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, i
             idx += 1;
 #line 293 "src/main.vl"
             cur_p = cur_p->next;
-            __loop_cont_471: __attribute__((unused));
+            __loop_cont_472: __attribute__((unused));
         }
-        __loop_break_471: __attribute__((unused));
+        __loop_break_472: __attribute__((unused));
 #line 295 "src/main.vl"
         return;
     }
@@ -45025,9 +45343,9 @@ void emit_destructure_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, i
         idx += 1;
 #line 323 "src/main.vl"
         cur_p = cur_p->next;
-        __loop_cont_472: __attribute__((unused));
+        __loop_cont_473: __attribute__((unused));
     }
-    __loop_break_472: __attribute__((unused));
+    __loop_break_473: __attribute__((unused));
 }
 
 #line 12 "src/main.vl"
@@ -46215,9 +46533,9 @@ int32_t block_scope_depth(DeferNode** defers) {
         }
 #line 57 "src/main.vl"
         cur = cur->next;
-        __loop_cont_473: __attribute__((unused));
+        __loop_cont_474: __attribute__((unused));
     }
-    __loop_break_473: __attribute__((unused));
+    __loop_break_474: __attribute__((unused));
 #line 57 "src/main.vl"
     return count;
 }
@@ -46242,9 +46560,9 @@ int32_t count_block_defers(DeferNode** defers) {
         }
 #line 58 "src/main.vl"
         cur = cur->next;
-        __loop_cont_474: __attribute__((unused));
+        __loop_cont_475: __attribute__((unused));
     }
-    __loop_break_474: __attribute__((unused));
+    __loop_break_475: __attribute__((unused));
 #line 58 "src/main.vl"
     return count;
 }
@@ -46267,9 +46585,9 @@ bool has_active_defers(DeferNode** defers) {
         }
 #line 64 "src/main.vl"
         cur = cur->next;
-        __loop_cont_475: __attribute__((unused));
+        __loop_cont_476: __attribute__((unused));
     }
-    __loop_break_475: __attribute__((unused));
+    __loop_break_476: __attribute__((unused));
 #line 65 "src/main.vl"
     return false;
 }
@@ -46389,9 +46707,9 @@ void emit_c_block_stmts(StringBuilder* sb, SymbolTable* st, StmtNode* block, int
         }
 #line 106 "src/main.vl"
         cur = cur->next;
-        __loop_cont_476: __attribute__((unused));
+        __loop_cont_477: __attribute__((unused));
     }
-    __loop_break_476: __attribute__((unused));
+    __loop_break_477: __attribute__((unused));
 #line 108 "src/main.vl"
     if (((!block_exited) && (defers != NULL))) {
 #line 109 "src/main.vl"
@@ -46402,9 +46720,9 @@ void emit_c_block_stmts(StringBuilder* sb, SymbolTable* st, StmtNode* block, int
             emit_c_cleanup(sb, st, cur_d, indent, defers);
 #line 111 "src/main.vl"
             cur_d = cur_d->next;
-            __loop_cont_477: __attribute__((unused));
+            __loop_cont_478: __attribute__((unused));
         }
-        __loop_break_477: __attribute__((unused));
+        __loop_break_478: __attribute__((unused));
     }
 #line 114 "src/main.vl"
     pop_block_scope(defers, prev_scope);
@@ -47064,9 +47382,9 @@ void emit_c_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t ind
             emit_c_cleanup(sb, st, df_cur, (indent + 1), defers);
 #line 341 "src/main.vl"
             df_cur = df_cur->next;
-            __loop_cont_478: __attribute__((unused));
+            __loop_cont_479: __attribute__((unused));
         }
-        __loop_break_478: __attribute__((unused));
+        __loop_break_479: __attribute__((unused));
 #line 342 "src/main.vl"
         (*(defers)) = zone_df_target;
 #line 342 "src/main.vl"
@@ -47130,15 +47448,15 @@ void emit_c_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t ind
 #line 360 "src/main.vl"
                 target_loop_id = cur_d->loop_id;
 #line 360 "src/main.vl"
-                goto __loop_break_479;
+                goto __loop_break_480;
             }
 #line 361 "src/main.vl"
             emit_c_cleanup(sb, st, cur_d, indent, defers);
 #line 361 "src/main.vl"
             cur_d = cur_d->next;
-            __loop_cont_479: __attribute__((unused));
+            __loop_cont_480: __attribute__((unused));
         }
-        __loop_break_479: __attribute__((unused));
+        __loop_break_480: __attribute__((unused));
 #line 366 "src/main.vl"
         if (velo_cmp_eq_u_s(target_loop_id, 0)) {
 #line 366 "src/main.vl"
@@ -47172,15 +47490,15 @@ void emit_c_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t ind
 #line 374 "src/main.vl"
                 target_loop_id = cur_d->loop_id;
 #line 374 "src/main.vl"
-                goto __loop_break_480;
+                goto __loop_break_481;
             }
 #line 375 "src/main.vl"
             emit_c_cleanup(sb, st, cur_d, indent, defers);
 #line 375 "src/main.vl"
             cur_d = cur_d->next;
-            __loop_cont_480: __attribute__((unused));
+            __loop_cont_481: __attribute__((unused));
         }
-        __loop_break_480: __attribute__((unused));
+        __loop_break_481: __attribute__((unused));
 #line 377 "src/main.vl"
         if (velo_cmp_eq_u_s(target_loop_id, 0)) {
 #line 377 "src/main.vl"
@@ -47251,9 +47569,9 @@ bool is_shelf_form(const char* type_name) {
     for (int32_t it = 0; (((at < len) && velo_cmp_eq_u_s(type_name[at], '@'))); it++) {
 #line 21 "src/main.vl"
         at += 1;
-        __loop_cont_481: __attribute__((unused));
+        __loop_cont_482: __attribute__((unused));
     }
-    __loop_break_481: __attribute__((unused));
+    __loop_break_482: __attribute__((unused));
 #line 22 "src/main.vl"
     if (((((((len >= (at + 11)) && velo_cmp_eq_u_s(type_name[at], 'h')) && velo_cmp_eq_u_s(type_name[(at + 1)], 'e')) && velo_cmp_eq_u_s(type_name[(at + 2)], 'a')) && velo_cmp_eq_u_s(type_name[(at + 3)], 'p')) && velo_cmp_eq_u_s(type_name[(at + 4)], ' '))) {
 #line 23 "src/main.vl"
@@ -47288,9 +47606,9 @@ const char* shelf_raw_elem(const char* type_name) {
     for (int32_t it = 0; (((at < len) && velo_cmp_eq_u_s(type_name[at], '@'))); it++) {
 #line 36 "src/main.vl"
         at += 1;
-        __loop_cont_482: __attribute__((unused));
+        __loop_cont_483: __attribute__((unused));
     }
-    __loop_break_482: __attribute__((unused));
+    __loop_break_483: __attribute__((unused));
 #line 37 "src/main.vl"
     if (((((((len >= (at + 11)) && velo_cmp_eq_u_s(type_name[at], 'h')) && velo_cmp_eq_u_s(type_name[(at + 1)], 'e')) && velo_cmp_eq_u_s(type_name[(at + 2)], 'a')) && velo_cmp_eq_u_s(type_name[(at + 3)], 'p')) && velo_cmp_eq_u_s(type_name[(at + 4)], ' '))) {
 #line 38 "src/main.vl"
@@ -47477,9 +47795,9 @@ void emit_shelf_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         count += 1;
 #line 51 "src/main.vl"
         cur = cur->next;
-        __loop_cont_483: __attribute__((unused));
+        __loop_cont_484: __attribute__((unused));
     }
-    __loop_break_483: __attribute__((unused));
+    __loop_break_484: __attribute__((unused));
 #line 53 "src/main.vl"
     sb_append_str(sb, "velo_shelf_create_lit((usize)sizeof(");
 #line 54 "src/main.vl"
@@ -47534,9 +47852,9 @@ void emit_shelf_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         sb_append_char(sb, ')');
 #line 80 "src/main.vl"
         cur = cur->next;
-        __loop_cont_484: __attribute__((unused));
+        __loop_cont_485: __attribute__((unused));
     }
-    __loop_break_484: __attribute__((unused));
+    __loop_break_485: __attribute__((unused));
 #line 82 "src/main.vl"
     sb_append_str(sb, " }, ");
 #line 83 "src/main.vl"
@@ -47893,9 +48211,9 @@ void emit_struct_lit_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
                 }
 #line 27 "src/main.vl"
                 ae = ae->next;
-                __loop_cont_486: __attribute__((unused));
+                __loop_cont_487: __attribute__((unused));
             }
-            __loop_break_486: __attribute__((unused));
+            __loop_break_487: __attribute__((unused));
 #line 29 "src/main.vl"
             sb_append_str(sb, " }");
         } else {
@@ -47906,9 +48224,9 @@ void emit_struct_lit_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         need_sep = true;
 #line 34 "src/main.vl"
         cur_init = cur_init->next;
-        __loop_cont_485: __attribute__((unused));
+        __loop_cont_486: __attribute__((unused));
     }
-    __loop_break_485: __attribute__((unused));
+    __loop_break_486: __attribute__((unused));
 #line 36 "src/main.vl"
     StructSym* st_sym = find_struct(st, resolved_type);
 #line 37 "src/main.vl"
@@ -47930,9 +48248,9 @@ void emit_struct_lit_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
                 }
 #line 44 "src/main.vl"
                 seen = seen->next;
-                __loop_cont_488: __attribute__((unused));
+                __loop_cont_489: __attribute__((unused));
             }
-            __loop_break_488: __attribute__((unused));
+            __loop_break_489: __attribute__((unused));
 #line 46 "src/main.vl"
             if (((!covered) && sf->has_default)) {
 #line 47 "src/main.vl"
@@ -47953,9 +48271,9 @@ void emit_struct_lit_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
             }
 #line 54 "src/main.vl"
             sf = sf->next;
-            __loop_cont_487: __attribute__((unused));
+            __loop_cont_488: __attribute__((unused));
         }
-        __loop_break_487: __attribute__((unused));
+        __loop_break_488: __attribute__((unused));
     }
 #line 57 "src/main.vl"
     sb_append_str(sb, " }");
@@ -48299,9 +48617,9 @@ void emit_reflect_call(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
             cur_f = cur_f->next;
 #line 27 "src/main.vl"
             fi += 1;
-            __loop_cont_489: __attribute__((unused));
+            __loop_cont_490: __attribute__((unused));
         }
-        __loop_break_489: __attribute__((unused));
+        __loop_break_490: __attribute__((unused));
 #line 29 "src/main.vl"
         if ((cur_f == NULL)) {
 #line 29 "src/main.vl"
@@ -48379,9 +48697,9 @@ void emit_reflect_call(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
             cur_f = cur_f->next;
 #line 67 "src/main.vl"
             fi += 1;
-            __loop_cont_490: __attribute__((unused));
+            __loop_cont_491: __attribute__((unused));
         }
-        __loop_break_490: __attribute__((unused));
+        __loop_break_491: __attribute__((unused));
 #line 69 "src/main.vl"
         if ((cur_f != NULL)) {
 #line 70 "src/main.vl"
@@ -48435,9 +48753,9 @@ void emit_reflect_call(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         }
 #line 101 "src/main.vl"
         cur_f = cur_f->next;
-        __loop_cont_491: __attribute__((unused));
+        __loop_cont_492: __attribute__((unused));
     }
-    __loop_break_491: __attribute__((unused));
+    __loop_break_492: __attribute__((unused));
 #line 103 "src/main.vl"
     sb_append_str(sb, " })[(int)(");
 #line 104 "src/main.vl"
@@ -48467,9 +48785,9 @@ void emit_call_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
             }
 #line 37 "src/main.vl"
             cur_a = cur_a->next;
-            __loop_cont_492: __attribute__((unused));
+            __loop_cont_493: __attribute__((unused));
         }
-        __loop_break_492: __attribute__((unused));
+        __loop_break_493: __attribute__((unused));
 #line 39 "src/main.vl"
         sb_append_char(sb, ')');
 #line 40 "src/main.vl"
@@ -48532,9 +48850,9 @@ void emit_call_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
                             cur_f = cur_f->next;
 #line 58 "src/main.vl"
                             cur_a = cur_a->next;
-                            __loop_cont_493: __attribute__((unused));
+                            __loop_cont_494: __attribute__((unused));
                         }
-                        __loop_break_493: __attribute__((unused));
+                        __loop_break_494: __attribute__((unused));
 #line 60 "src/main.vl"
                         sb_append_str(sb, " }");
                     } else {
@@ -49097,9 +49415,9 @@ void emit_call_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
                     }
 #line 185 "src/main.vl"
                     cur_a = cur_a->next;
-                    __loop_cont_494: __attribute__((unused));
+                    __loop_cont_495: __attribute__((unused));
                 }
-                __loop_break_494: __attribute__((unused));
+                __loop_break_495: __attribute__((unused));
 #line 187 "src/main.vl"
                 sb_append_char(sb, ')');
 #line 188 "src/main.vl"
@@ -49131,9 +49449,9 @@ void emit_call_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
                 }
 #line 199 "src/main.vl"
                 i += 1;
-                __loop_cont_495: __attribute__((unused));
+                __loop_cont_496: __attribute__((unused));
             }
-            __loop_break_495: __attribute__((unused));
+            __loop_break_496: __attribute__((unused));
         } else {
 #line 201 "src/main.vl"
             sb_append_str(sb, "<source>");
@@ -49185,9 +49503,9 @@ void emit_call_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
             }
 #line 214 "src/main.vl"
             cur_arg = cur_arg->next;
-            __loop_cont_496: __attribute__((unused));
+            __loop_cont_497: __attribute__((unused));
         }
-        __loop_break_496: __attribute__((unused));
+        __loop_break_497: __attribute__((unused));
 #line 215 "src/main.vl"
         sb_append_char(sb, ')');
 #line 215 "src/main.vl"
@@ -49210,9 +49528,9 @@ void emit_call_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
         }
 #line 227 "src/main.vl"
         cur_arg = cur_arg->next;
-        __loop_cont_497: __attribute__((unused));
+        __loop_cont_498: __attribute__((unused));
     }
-    __loop_break_497: __attribute__((unused));
+    __loop_break_498: __attribute__((unused));
 #line 229 "src/main.vl"
     sb_append_char(sb, ')');
 }
@@ -49481,9 +49799,9 @@ void emit_c_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
                     cur_f = cur_f->next;
 #line 103 "src/main.vl"
                     cur_a = cur_a->next;
-                    __loop_cont_498: __attribute__((unused));
+                    __loop_cont_499: __attribute__((unused));
                 }
-                __loop_break_498: __attribute__((unused));
+                __loop_break_499: __attribute__((unused));
 #line 105 "src/main.vl"
                 sb_append_str(sb, " }");
             } else {
@@ -50398,9 +50716,9 @@ size_t count_test_decls(ProgramNode* prog) {
         }
 #line 17 "src/main.vl"
         cur = cur->next;
-        __loop_cont_499: __attribute__((unused));
+        __loop_cont_500: __attribute__((unused));
     }
-    __loop_break_499: __attribute__((unused));
+    __loop_break_500: __attribute__((unused));
 #line 19 "src/main.vl"
     return count;
 }
@@ -50426,9 +50744,9 @@ void emit_test_prototypes(StringBuilder* sb, ProgramNode* prog) {
         }
 #line 33 "src/main.vl"
         cur = cur->next;
-        __loop_cont_500: __attribute__((unused));
+        __loop_cont_501: __attribute__((unused));
     }
-    __loop_break_500: __attribute__((unused));
+    __loop_break_501: __attribute__((unused));
 #line 35 "src/main.vl"
     if (velo_cmp_gt_u_s(idx, 0)) {
 #line 35 "src/main.vl"
@@ -50474,9 +50792,9 @@ void emit_test_functions(StringBuilder* sb, SymbolTable* st, ProgramNode* prog) 
                 emit_c_cleanup(sb, st, cur_d, 1, (&(defers)));
 #line 60 "src/main.vl"
                 cur_d = cur_d->next;
-                __loop_cont_502: __attribute__((unused));
+                __loop_cont_503: __attribute__((unused));
             }
-            __loop_break_502: __attribute__((unused));
+            __loop_break_503: __attribute__((unused));
 #line 62 "src/main.vl"
             exit_scope(st);
 #line 64 "src/main.vl"
@@ -50486,9 +50804,9 @@ void emit_test_functions(StringBuilder* sb, SymbolTable* st, ProgramNode* prog) 
         }
 #line 67 "src/main.vl"
         cur = cur->next;
-        __loop_cont_501: __attribute__((unused));
+        __loop_cont_502: __attribute__((unused));
     }
-    __loop_break_501: __attribute__((unused));
+    __loop_break_502: __attribute__((unused));
 }
 
 #line 72 "src/main.vl"
@@ -50545,9 +50863,9 @@ void emit_test_harness_main(StringBuilder* sb, ProgramNode* prog) {
         }
 #line 102 "src/main.vl"
         cur = cur->next;
-        __loop_cont_503: __attribute__((unused));
+        __loop_cont_504: __attribute__((unused));
     }
-    __loop_break_503: __attribute__((unused));
+    __loop_break_504: __attribute__((unused));
 #line 104 "src/main.vl"
     sb_append_str(sb, "    };\n");
 #line 105 "src/main.vl"
@@ -50658,9 +50976,9 @@ void emit_act_typedef(StringBuilder* sb, const char* act_type) {
     for (int32_t it = 0; (((i < len) && velo_cmp_ne_u_s(clean[i], '('))); it++) {
 #line 42 "src/main.vl"
         i += 1;
-        __loop_cont_504: __attribute__((unused));
+        __loop_cont_505: __attribute__((unused));
     }
-    __loop_break_504: __attribute__((unused));
+    __loop_break_505: __attribute__((unused));
 #line 43 "src/main.vl"
     if ((i < len)) {
 #line 43 "src/main.vl"
@@ -50674,13 +50992,13 @@ void emit_act_typedef(StringBuilder* sb, const char* act_type) {
         for (int32_t it = 0; (((i < len) && (velo_cmp_eq_u_s(clean[i], ' ') || velo_cmp_eq_u_s(clean[i], '\t')))); it++) {
 #line 47 "src/main.vl"
             i += 1;
-            __loop_cont_506: __attribute__((unused));
+            __loop_cont_507: __attribute__((unused));
         }
-        __loop_break_506: __attribute__((unused));
+        __loop_break_507: __attribute__((unused));
 #line 48 "src/main.vl"
         if (((i >= len) || velo_cmp_eq_u_s(clean[i], ')'))) {
 #line 48 "src/main.vl"
-            goto __loop_break_505;
+            goto __loop_break_506;
         }
 #line 49 "src/main.vl"
         size_t start = i;
@@ -50688,18 +51006,18 @@ void emit_act_typedef(StringBuilder* sb, const char* act_type) {
         for (int32_t it = 0; ((((i < len) && velo_cmp_ne_u_s(clean[i], ',')) && velo_cmp_ne_u_s(clean[i], ')'))); it++) {
 #line 50 "src/main.vl"
             i += 1;
-            __loop_cont_507: __attribute__((unused));
+            __loop_cont_508: __attribute__((unused));
         }
-        __loop_break_507: __attribute__((unused));
+        __loop_break_508: __attribute__((unused));
 #line 51 "src/main.vl"
         size_t end = i;
 #line 52 "src/main.vl"
         for (int32_t it = 0; (((end > start) && (velo_cmp_eq_u_s(clean[(end - 1)], ' ') || velo_cmp_eq_u_s(clean[(end - 1)], '\t')))); it++) {
 #line 52 "src/main.vl"
             end -= 1;
-            __loop_cont_508: __attribute__((unused));
+            __loop_cont_509: __attribute__((unused));
         }
-        __loop_break_508: __attribute__((unused));
+        __loop_break_509: __attribute__((unused));
 #line 53 "src/main.vl"
         const char* p_str = copy_slice_to_string(clean, start, (end - start));
 #line 54 "src/main.vl"
@@ -50718,9 +51036,9 @@ void emit_act_typedef(StringBuilder* sb, const char* act_type) {
 #line 58 "src/main.vl"
             i += 1;
         }
-        __loop_cont_505: __attribute__((unused));
+        __loop_cont_506: __attribute__((unused));
     }
-    __loop_break_505: __attribute__((unused));
+    __loop_break_506: __attribute__((unused));
 #line 61 "src/main.vl"
     if (velo_cmp_eq_u_s(p_count, 0)) {
 #line 62 "src/main.vl"
@@ -50755,9 +51073,9 @@ void scan_stmt_act_types(StmtNode* s, ActTypeNode** list) {
             scan_stmt_act_types(cur, list);
 #line 78 "src/main.vl"
             cur = cur->next;
-            __loop_cont_509: __attribute__((unused));
+            __loop_cont_510: __attribute__((unused));
         }
-        __loop_break_509: __attribute__((unused));
+        __loop_break_510: __attribute__((unused));
     } else
 #line 80 "src/main.vl"
     if ((s->kind == STMT_IF)) {
@@ -50797,9 +51115,9 @@ void scan_stmt_act_types(StmtNode* s, ActTypeNode** list) {
             }
 #line 93 "src/main.vl"
             c = c->next;
-            __loop_cont_510: __attribute__((unused));
+            __loop_cont_511: __attribute__((unused));
         }
-        __loop_break_510: __attribute__((unused));
+        __loop_break_511: __attribute__((unused));
     }
 }
 
@@ -50822,9 +51140,9 @@ void scan_program_act_types(ProgramNode* prog, ActTypeNode** list) {
                 }
 #line 108 "src/main.vl"
                 cur_f = cur_f->next;
-                __loop_cont_512: __attribute__((unused));
+                __loop_cont_513: __attribute__((unused));
             }
-            __loop_break_512: __attribute__((unused));
+            __loop_break_513: __attribute__((unused));
         } else
 #line 110 "src/main.vl"
         if ((cur->kind == DECL_KIND)) {
@@ -50848,14 +51166,14 @@ void scan_program_act_types(ProgramNode* prog, ActTypeNode** list) {
                     }
 #line 121 "src/main.vl"
                     cf = cf->next;
-                    __loop_cont_514: __attribute__((unused));
+                    __loop_cont_515: __attribute__((unused));
                 }
-                __loop_break_514: __attribute__((unused));
+                __loop_break_515: __attribute__((unused));
 #line 123 "src/main.vl"
                 cv = cv->next;
-                __loop_cont_513: __attribute__((unused));
+                __loop_cont_514: __attribute__((unused));
             }
-            __loop_break_513: __attribute__((unused));
+            __loop_break_514: __attribute__((unused));
         } else
 #line 125 "src/main.vl"
         if (((cur->kind == DECL_FUNCTION) || (cur->kind == DECL_EXTERN))) {
@@ -50875,9 +51193,9 @@ void scan_program_act_types(ProgramNode* prog, ActTypeNode** list) {
                 }
 #line 134 "src/main.vl"
                 cur_p = cur_p->next;
-                __loop_cont_515: __attribute__((unused));
+                __loop_cont_516: __attribute__((unused));
             }
-            __loop_break_515: __attribute__((unused));
+            __loop_break_516: __attribute__((unused));
 #line 136 "src/main.vl"
             if ((cur->body != NULL)) {
 #line 137 "src/main.vl"
@@ -50894,9 +51212,9 @@ void scan_program_act_types(ProgramNode* prog, ActTypeNode** list) {
         }
 #line 144 "src/main.vl"
         cur = cur->next;
-        __loop_cont_511: __attribute__((unused));
+        __loop_cont_512: __attribute__((unused));
     }
-    __loop_break_511: __attribute__((unused));
+    __loop_break_512: __attribute__((unused));
 }
 
 #line 149 "src/main.vl"
@@ -50931,9 +51249,9 @@ void emit_param_list(StringBuilder* sb, ParamNode* first_param, size_t param_cou
             }
 #line 164 "src/main.vl"
             cur_p = cur_p->next;
-            __loop_cont_516: __attribute__((unused));
+            __loop_cont_517: __attribute__((unused));
         }
-        __loop_break_516: __attribute__((unused));
+        __loop_break_517: __attribute__((unused));
     }
 #line 167 "src/main.vl"
     sb_append_char(sb, ')');
@@ -51041,9 +51359,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
         }
 #line 200 "src/main.vl"
         cur = cur->next;
-        __loop_cont_517: __attribute__((unused));
+        __loop_cont_518: __attribute__((unused));
     }
-    __loop_break_517: __attribute__((unused));
+    __loop_break_518: __attribute__((unused));
 #line 202 "src/main.vl"
     sb_append_line(sb, "", 0);
 #line 205 "src/main.vl"
@@ -51074,9 +51392,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
         }
 #line 213 "src/main.vl"
         cur = cur->next;
-        __loop_cont_518: __attribute__((unused));
+        __loop_cont_519: __attribute__((unused));
     }
-    __loop_break_518: __attribute__((unused));
+    __loop_break_519: __attribute__((unused));
 #line 215 "src/main.vl"
     if (found_alias) {
 #line 215 "src/main.vl"
@@ -51098,9 +51416,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
             emit_act_typedef(sb, cur_act->type_name);
 #line 225 "src/main.vl"
             cur_act = cur_act->next;
-            __loop_cont_519: __attribute__((unused));
+            __loop_cont_520: __attribute__((unused));
         }
-        __loop_break_519: __attribute__((unused));
+        __loop_break_520: __attribute__((unused));
 #line 227 "src/main.vl"
         sb_append_str(sb, "\n");
     }
@@ -51151,9 +51469,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
                 cv = cv->next;
 #line 246 "src/main.vl"
                 vi += 1;
-                __loop_cont_521: __attribute__((unused));
+                __loop_cont_522: __attribute__((unused));
             }
-            __loop_break_521: __attribute__((unused));
+            __loop_break_522: __attribute__((unused));
 #line 248 "src/main.vl"
             sb_append_str(sb, "};\n\n");
 #line 250 "src/main.vl"
@@ -51190,9 +51508,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
                             sb_append_str(sb, ";\n");
 #line 263 "src/main.vl"
                             cf = cf->next;
-                            __loop_cont_523: __attribute__((unused));
+                            __loop_cont_524: __attribute__((unused));
                         }
-                        __loop_break_523: __attribute__((unused));
+                        __loop_break_524: __attribute__((unused));
 #line 265 "src/main.vl"
                         sb_append_str(sb, "} ");
 #line 265 "src/main.vl"
@@ -51206,9 +51524,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
                     }
 #line 267 "src/main.vl"
                     cv = cv->next;
-                    __loop_cont_522: __attribute__((unused));
+                    __loop_cont_523: __attribute__((unused));
                 }
-                __loop_break_522: __attribute__((unused));
+                __loop_break_523: __attribute__((unused));
 #line 270 "src/main.vl"
                 sb_append_str(sb, "struct ");
 #line 270 "src/main.vl"
@@ -51259,9 +51577,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
                     }
 #line 285 "src/main.vl"
                     cv = cv->next;
-                    __loop_cont_524: __attribute__((unused));
+                    __loop_cont_525: __attribute__((unused));
                 }
-                __loop_break_524: __attribute__((unused));
+                __loop_break_525: __attribute__((unused));
 #line 287 "src/main.vl"
                 sb_append_indent(sb, 1);
 #line 287 "src/main.vl"
@@ -51272,9 +51590,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
         }
 #line 291 "src/main.vl"
         cur = cur->next;
-        __loop_cont_520: __attribute__((unused));
+        __loop_cont_521: __attribute__((unused));
     }
-    __loop_break_520: __attribute__((unused));
+    __loop_break_521: __attribute__((unused));
 #line 295 "src/main.vl"
     cur = prog->first_decl;
 #line 296 "src/main.vl"
@@ -51340,17 +51658,17 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
                 sb_append_str(sb, ";\n");
 #line 318 "src/main.vl"
                 cur_f = cur_f->next;
-                __loop_cont_526: __attribute__((unused));
+                __loop_cont_527: __attribute__((unused));
             }
-            __loop_break_526: __attribute__((unused));
+            __loop_break_527: __attribute__((unused));
 #line 320 "src/main.vl"
             sb_append_str(sb, "};\n\n");
         }
 #line 322 "src/main.vl"
         cur = cur->next;
-        __loop_cont_525: __attribute__((unused));
+        __loop_cont_526: __attribute__((unused));
     }
-    __loop_break_525: __attribute__((unused));
+    __loop_break_526: __attribute__((unused));
 #line 326 "src/main.vl"
     TupleTypeNode* tuple_list = NULL;
 #line 327 "src/main.vl"
@@ -51402,9 +51720,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
         }
 #line 351 "src/main.vl"
         cur = cur->next;
-        __loop_cont_527: __attribute__((unused));
+        __loop_cont_528: __attribute__((unused));
     }
-    __loop_break_527: __attribute__((unused));
+    __loop_break_528: __attribute__((unused));
 #line 353 "src/main.vl"
     sb_append_line(sb, "", 0);
 #line 356 "src/main.vl"
@@ -51452,9 +51770,9 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
         }
 #line 372 "src/main.vl"
         cur = cur->next;
-        __loop_cont_528: __attribute__((unused));
+        __loop_cont_529: __attribute__((unused));
     }
-    __loop_break_528: __attribute__((unused));
+    __loop_break_529: __attribute__((unused));
 #line 374 "src/main.vl"
     sb_append_line(sb, "", 0);
 }
@@ -51502,9 +51820,9 @@ const char* emit_translation_unit(SymbolTable* st, ProgramNode* prog) {
         }
 #line 39 "src/main.vl"
         cur = cur->next;
-        __loop_cont_529: __attribute__((unused));
+        __loop_cont_530: __attribute__((unused));
     }
-    __loop_break_529: __attribute__((unused));
+    __loop_break_530: __attribute__((unused));
 #line 41 "src/main.vl"
     sb_append_line((&(sb)), "", 0);
 #line 44 "src/main.vl"
@@ -51570,9 +51888,9 @@ const char* emit_translation_unit(SymbolTable* st, ProgramNode* prog) {
                 define_parameter(st, cur_param->name, cur_param->type_name, cur_param->line, cur_param->col);
 #line 68 "src/main.vl"
                 cur_param = cur_param->next;
-                __loop_cont_531: __attribute__((unused));
+                __loop_cont_532: __attribute__((unused));
             }
-            __loop_break_531: __attribute__((unused));
+            __loop_break_532: __attribute__((unused));
 #line 71 "src/main.vl"
             bool prev_strict = st->strict_safety;
 #line 72 "src/main.vl"
@@ -51594,9 +51912,9 @@ const char* emit_translation_unit(SymbolTable* st, ProgramNode* prog) {
                 emit_c_cleanup((&(sb)), st, cur_d, 1, (&(defers)));
 #line 80 "src/main.vl"
                 cur_d = cur_d->next;
-                __loop_cont_532: __attribute__((unused));
+                __loop_cont_533: __attribute__((unused));
             }
-            __loop_break_532: __attribute__((unused));
+            __loop_break_533: __attribute__((unused));
 #line 83 "src/main.vl"
             if (((cur->name != NULL && "main" != NULL) ? (strcmp(cur->name, "main") == 0) : (cur->name == "main"))) {
 #line 83 "src/main.vl"
@@ -51611,9 +51929,9 @@ const char* emit_translation_unit(SymbolTable* st, ProgramNode* prog) {
         }
 #line 87 "src/main.vl"
         cur = cur->next;
-        __loop_cont_530: __attribute__((unused));
+        __loop_cont_531: __attribute__((unused));
     }
-    __loop_break_530: __attribute__((unused));
+    __loop_break_531: __attribute__((unused));
 #line 90 "src/main.vl"
     if (st->is_test) {
 #line 91 "src/main.vl"
@@ -51661,16 +51979,16 @@ const char* extract_block_doc(const char* source, size_t block_start, size_t blo
 #line 32 "src/main.vl"
             p += 1;
         }
-        __loop_cont_533: __attribute__((unused));
+        __loop_cont_534: __attribute__((unused));
     }
-    __loop_break_533: __attribute__((unused));
+    __loop_break_534: __attribute__((unused));
 #line 36 "src/main.vl"
     for (int32_t it = 0; ((velo_cmp_gt_u_s(sb.len, 0) && (((velo_cmp_eq_u_s(sb.buffer[(sb.len - 1)], ' ') || velo_cmp_eq_u_s(sb.buffer[(sb.len - 1)], '\r')) || velo_cmp_eq_u_s(sb.buffer[(sb.len - 1)], '\n')) || velo_cmp_eq_u_s(sb.buffer[(sb.len - 1)], '>')))); it++) {
 #line 37 "src/main.vl"
         sb.len -= 1;
-        __loop_cont_534: __attribute__((unused));
+        __loop_cont_535: __attribute__((unused));
     }
-    __loop_break_534: __attribute__((unused));
+    __loop_break_535: __attribute__((unused));
 #line 39 "src/main.vl"
     if (velo_cmp_gt_u_s(sb.len, 0)) {
 #line 40 "src/main.vl"
@@ -51706,9 +52024,9 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
         }
 #line 59 "src/main.vl"
         i += 1;
-        __loop_cont_535: __attribute__((unused));
+        __loop_cont_536: __attribute__((unused));
     }
-    __loop_break_535: __attribute__((unused));
+    __loop_break_536: __attribute__((unused));
 #line 62 "src/main.vl"
     if (velo_cmp_eq_u_s(line_start, 0)) {
 #line 62 "src/main.vl"
@@ -51720,9 +52038,9 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
     for (int32_t it = 0; ((velo_cmp_gt_u_s(p, 0) && (((velo_cmp_eq_u_s(source[p], '\n') || velo_cmp_eq_u_s(source[p], '\r')) || velo_cmp_eq_u_s(source[p], ' ')) || velo_cmp_eq_u_s(source[p], '\t')))); it++) {
 #line 67 "src/main.vl"
         p -= 1;
-        __loop_cont_536: __attribute__((unused));
+        __loop_cont_537: __attribute__((unused));
     }
-    __loop_break_536: __attribute__((unused));
+    __loop_break_537: __attribute__((unused));
 #line 69 "src/main.vl"
     if (((velo_cmp_ge_u_s(p, 1) && velo_cmp_eq_u_s(source[(p - 1)], '*')) && velo_cmp_eq_u_s(source[p], '/'))) {
 #line 71 "src/main.vl"
@@ -51739,9 +52057,9 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
 #line 77 "src/main.vl"
                 b -= 1;
             }
-            __loop_cont_537: __attribute__((unused));
+            __loop_cont_538: __attribute__((unused));
         }
-        __loop_break_537: __attribute__((unused));
+        __loop_break_538: __attribute__((unused));
 #line 80 "src/main.vl"
         if (found_doc) {
 #line 81 "src/main.vl"
@@ -51772,18 +52090,18 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
 #line 97 "src/main.vl"
             k = 0;
         }
-        __loop_cont_538: __attribute__((unused));
+        __loop_cont_539: __attribute__((unused));
     }
-    __loop_break_538: __attribute__((unused));
+    __loop_break_539: __attribute__((unused));
 #line 102 "src/main.vl"
     size_t chk = l_start;
 #line 103 "src/main.vl"
     for (int32_t it = 0; (((chk < l_end) && ((velo_cmp_eq_u_s(source[chk], ' ') || velo_cmp_eq_u_s(source[chk], '\t')) || velo_cmp_eq_u_s(source[chk], '\r')))); it++) {
 #line 104 "src/main.vl"
         chk += 1;
-        __loop_cont_539: __attribute__((unused));
+        __loop_cont_540: __attribute__((unused));
     }
-    __loop_break_539: __attribute__((unused));
+    __loop_break_540: __attribute__((unused));
 #line 106 "src/main.vl"
     if (((((chk + 1) >= l_end) || velo_cmp_ne_u_s(source[chk], '/')) || velo_cmp_ne_u_s(source[(chk + 1)], '/'))) {
 #line 107 "src/main.vl"
@@ -51823,18 +52141,18 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
 #line 127 "src/main.vl"
                     m = 0;
                 }
-                __loop_cont_541: __attribute__((unused));
+                __loop_cont_542: __attribute__((unused));
             }
-            __loop_break_541: __attribute__((unused));
+            __loop_break_542: __attribute__((unused));
 #line 130 "src/main.vl"
             size_t cp = prev_s;
 #line 131 "src/main.vl"
             for (int32_t it = 0; (((cp < prev_e) && ((velo_cmp_eq_u_s(source[cp], ' ') || velo_cmp_eq_u_s(source[cp], '\t')) || velo_cmp_eq_u_s(source[cp], '\r')))); it++) {
 #line 132 "src/main.vl"
                 cp += 1;
-                __loop_cont_542: __attribute__((unused));
+                __loop_cont_543: __attribute__((unused));
             }
-            __loop_break_542: __attribute__((unused));
+            __loop_break_543: __attribute__((unused));
 #line 134 "src/main.vl"
             if (((((cp + 1) < prev_e) && velo_cmp_eq_u_s(source[cp], '/')) && velo_cmp_eq_u_s(source[(cp + 1)], '/'))) {
 #line 135 "src/main.vl"
@@ -51846,9 +52164,9 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
                 scanning = false;
             }
         }
-        __loop_cont_540: __attribute__((unused));
+        __loop_cont_541: __attribute__((unused));
     }
-    __loop_break_540: __attribute__((unused));
+    __loop_break_541: __attribute__((unused));
 #line 144 "src/main.vl"
     StringBuilder sb = create_sb(1024);
 #line 145 "src/main.vl"
@@ -51863,18 +52181,18 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
         for (int32_t it = 0; (((cur_e < slen) && velo_cmp_ne_u_s(source[cur_e], '\n'))); it++) {
 #line 150 "src/main.vl"
             cur_e += 1;
-            __loop_cont_544: __attribute__((unused));
+            __loop_cont_545: __attribute__((unused));
         }
-        __loop_break_544: __attribute__((unused));
+        __loop_break_545: __attribute__((unused));
 #line 153 "src/main.vl"
         size_t cstart = cur_s;
 #line 154 "src/main.vl"
         for (int32_t it = 0; (((cstart < cur_e) && ((velo_cmp_eq_u_s(source[cstart], ' ') || velo_cmp_eq_u_s(source[cstart], '\t')) || velo_cmp_eq_u_s(source[cstart], '\r')))); it++) {
 #line 155 "src/main.vl"
             cstart += 1;
-            __loop_cont_545: __attribute__((unused));
+            __loop_cont_546: __attribute__((unused));
         }
-        __loop_break_545: __attribute__((unused));
+        __loop_break_546: __attribute__((unused));
 #line 157 "src/main.vl"
         if (((((cstart + 1) < cur_e) && velo_cmp_eq_u_s(source[cstart], '/')) && velo_cmp_eq_u_s(source[(cstart + 1)], '/'))) {
 #line 158 "src/main.vl"
@@ -51895,9 +52213,9 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
             for (int32_t it = 0; (((cend > cstart) && (velo_cmp_eq_u_s(source[(cend - 1)], '\r') || velo_cmp_eq_u_s(source[(cend - 1)], ' ')))); it++) {
 #line 167 "src/main.vl"
                 cend -= 1;
-                __loop_cont_546: __attribute__((unused));
+                __loop_cont_547: __attribute__((unused));
             }
-            __loop_break_546: __attribute__((unused));
+            __loop_break_547: __attribute__((unused));
 #line 169 "src/main.vl"
             if ((cend > cstart)) {
 #line 170 "src/main.vl"
@@ -51915,9 +52233,9 @@ const char* extract_doc_comment(const char* source, int32_t target_line) {
         cur_s = (cur_e + 1);
 #line 179 "src/main.vl"
         cur_l += 1;
-        __loop_cont_543: __attribute__((unused));
+        __loop_cont_544: __attribute__((unused));
     }
-    __loop_break_543: __attribute__((unused));
+    __loop_break_544: __attribute__((unused));
 #line 182 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -51945,9 +52263,9 @@ const char* generate_markdown_docs(const char* filename, const char* source, Pro
         }
 #line 200 "src/main.vl"
         cur = cur->next;
-        __loop_cont_547: __attribute__((unused));
+        __loop_cont_548: __attribute__((unused));
     }
-    __loop_break_547: __attribute__((unused));
+    __loop_break_548: __attribute__((unused));
 #line 203 "src/main.vl"
     if (has_structs) {
 #line 204 "src/main.vl"
@@ -51995,17 +52313,17 @@ const char* generate_markdown_docs(const char* filename, const char* source, Pro
                     sb_append_str((&(sb)), "` |\n");
 #line 228 "src/main.vl"
                     cur_f = cur_f->next;
-                    __loop_cont_549: __attribute__((unused));
+                    __loop_cont_550: __attribute__((unused));
                 }
-                __loop_break_549: __attribute__((unused));
+                __loop_break_550: __attribute__((unused));
 #line 230 "src/main.vl"
                 sb_append_str((&(sb)), "\n");
             }
 #line 232 "src/main.vl"
             cur = cur->next;
-            __loop_cont_548: __attribute__((unused));
+            __loop_cont_549: __attribute__((unused));
         }
-        __loop_break_548: __attribute__((unused));
+        __loop_break_549: __attribute__((unused));
     }
 #line 237 "src/main.vl"
     bool has_functions = false;
@@ -52020,9 +52338,9 @@ const char* generate_markdown_docs(const char* filename, const char* source, Pro
         }
 #line 243 "src/main.vl"
         cur = cur->next;
-        __loop_cont_550: __attribute__((unused));
+        __loop_cont_551: __attribute__((unused));
     }
-    __loop_break_550: __attribute__((unused));
+    __loop_break_551: __attribute__((unused));
 #line 246 "src/main.vl"
     if (has_functions) {
 #line 247 "src/main.vl"
@@ -52056,9 +52374,9 @@ const char* generate_markdown_docs(const char* filename, const char* source, Pro
                     }
 #line 262 "src/main.vl"
                     cur_p = cur_p->next;
-                    __loop_cont_552: __attribute__((unused));
+                    __loop_cont_553: __attribute__((unused));
                 }
-                __loop_break_552: __attribute__((unused));
+                __loop_break_553: __attribute__((unused));
 #line 264 "src/main.vl"
                 sb_append_str((&(sb)), ") -> ");
 #line 265 "src/main.vl"
@@ -52079,9 +52397,9 @@ const char* generate_markdown_docs(const char* filename, const char* source, Pro
             }
 #line 275 "src/main.vl"
             cur = cur->next;
-            __loop_cont_551: __attribute__((unused));
+            __loop_cont_552: __attribute__((unused));
         }
-        __loop_break_551: __attribute__((unused));
+        __loop_break_552: __attribute__((unused));
     }
 #line 280 "src/main.vl"
     bool has_externs = false;
@@ -52096,9 +52414,9 @@ const char* generate_markdown_docs(const char* filename, const char* source, Pro
         }
 #line 286 "src/main.vl"
         cur = cur->next;
-        __loop_cont_553: __attribute__((unused));
+        __loop_cont_554: __attribute__((unused));
     }
-    __loop_break_553: __attribute__((unused));
+    __loop_break_554: __attribute__((unused));
 #line 289 "src/main.vl"
     if (has_externs) {
 #line 290 "src/main.vl"
@@ -52132,9 +52450,9 @@ const char* generate_markdown_docs(const char* filename, const char* source, Pro
                     }
 #line 305 "src/main.vl"
                     cur_p = cur_p->next;
-                    __loop_cont_555: __attribute__((unused));
+                    __loop_cont_556: __attribute__((unused));
                 }
-                __loop_break_555: __attribute__((unused));
+                __loop_break_556: __attribute__((unused));
 #line 307 "src/main.vl"
                 sb_append_str((&(sb)), ") -> ");
 #line 308 "src/main.vl"
@@ -52144,9 +52462,9 @@ const char* generate_markdown_docs(const char* filename, const char* source, Pro
             }
 #line 311 "src/main.vl"
             cur = cur->next;
-            __loop_cont_554: __attribute__((unused));
+            __loop_cont_555: __attribute__((unused));
         }
-        __loop_break_554: __attribute__((unused));
+        __loop_break_555: __attribute__((unused));
 #line 313 "src/main.vl"
         sb_append_str((&(sb)), "\n");
     }
@@ -52287,13 +52605,13 @@ void append_msvc_linker_flags(StringBuilder* sb, const char* linker_flags, bool 
         for (int32_t it = 0; (((i < len) && velo_cmp_eq_u_s(linker_flags[i], ' '))); it++) {
 #line 52 "src/main.vl"
             i += 1;
-            __loop_cont_557: __attribute__((unused));
+            __loop_cont_558: __attribute__((unused));
         }
-        __loop_break_557: __attribute__((unused));
+        __loop_break_558: __attribute__((unused));
 #line 54 "src/main.vl"
         if ((i >= len)) {
 #line 55 "src/main.vl"
-            goto __loop_break_556;
+            goto __loop_break_557;
         }
 #line 57 "src/main.vl"
         size_t start = i;
@@ -52308,9 +52626,9 @@ void append_msvc_linker_flags(StringBuilder* sb, const char* linker_flags, bool 
             }
 #line 63 "src/main.vl"
             i += 1;
-            __loop_cont_558: __attribute__((unused));
+            __loop_cont_559: __attribute__((unused));
         }
-        __loop_break_558: __attribute__((unused));
+        __loop_break_559: __attribute__((unused));
 #line 65 "src/main.vl"
         const char* token = copy_slice_to_string(linker_flags, start, (i - start));
 #line 66 "src/main.vl"
@@ -52343,9 +52661,9 @@ void append_msvc_linker_flags(StringBuilder* sb, const char* linker_flags, bool 
 #line 80 "src/main.vl"
             sb_append_str(sb, token);
         }
-        __loop_cont_556: __attribute__((unused));
+        __loop_cont_557: __attribute__((unused));
     }
-    __loop_break_556: __attribute__((unused));
+    __loop_break_557: __attribute__((unused));
 }
 
 #line 86 "src/main.vl"
@@ -52972,9 +53290,9 @@ int32_t test_target_opts(const char* target_path, bool unsafe_index, const char*
                 }
 #line 154 "src/main.vl"
                 has_more = fs_dir_next((&(iter)));
-                __loop_cont_559: __attribute__((unused));
+                __loop_cont_560: __attribute__((unused));
             }
-            __loop_break_559: __attribute__((unused));
+            __loop_break_560: __attribute__((unused));
         }
 #line 157 "src/main.vl"
         fs_dir_close((&(iter)));
@@ -53122,9 +53440,9 @@ const char* platform_suffix_of(const char* path) {
         }
 #line 131 "src/main.vl"
         i += 1;
-        __loop_cont_560: __attribute__((unused));
+        __loop_cont_561: __attribute__((unused));
     }
-    __loop_break_560: __attribute__((unused));
+    __loop_break_561: __attribute__((unused));
 #line 133 "src/main.vl"
     return "";
 }
@@ -53151,9 +53469,9 @@ const char* platform_of_path(const char* path) {
         }
 #line 144 "src/main.vl"
         i += 1;
-        __loop_cont_561: __attribute__((unused));
+        __loop_cont_562: __attribute__((unused));
     }
-    __loop_break_561: __attribute__((unused));
+    __loop_break_562: __attribute__((unused));
 #line 146 "src/main.vl"
     return "";
 }
@@ -53252,9 +53570,9 @@ bool foreign_variant_exists(const char* neutral_path, const char* platform) {
         }
 #line 196 "src/main.vl"
         i += 1;
-        __loop_cont_562: __attribute__((unused));
+        __loop_cont_563: __attribute__((unused));
     }
-    __loop_break_562: __attribute__((unused));
+    __loop_break_563: __attribute__((unused));
 #line 198 "src/main.vl"
     return false;
 }
@@ -53288,9 +53606,9 @@ const char* foreign_variant_name(const char* neutral_path, const char* platform)
         }
 #line 213 "src/main.vl"
         i += 1;
-        __loop_cont_563: __attribute__((unused));
+        __loop_cont_564: __attribute__((unused));
     }
-    __loop_break_563: __attribute__((unused));
+    __loop_break_564: __attribute__((unused));
 #line 215 "src/main.vl"
     return "";
 }
@@ -53345,9 +53663,9 @@ bool is_file_visited(CompilerDriver* d, const char* path) {
         }
 #line 65 "src/main.vl"
         cur = cur->next;
-        __loop_cont_564: __attribute__((unused));
+        __loop_cont_565: __attribute__((unused));
     }
-    __loop_break_564: __attribute__((unused));
+    __loop_break_565: __attribute__((unused));
 #line 67 "src/main.vl"
     return false;
 }
@@ -53468,9 +53786,9 @@ const char* std_module_to_rel_path(const char* mod_path) {
         }
 #line 142 "src/main.vl"
         i += 1;
-        __loop_cont_565: __attribute__((unused));
+        __loop_cont_566: __attribute__((unused));
     }
-    __loop_break_565: __attribute__((unused));
+    __loop_break_566: __attribute__((unused));
 #line 144 "src/main.vl"
     buf[plen] = '.';
 #line 145 "src/main.vl"
@@ -53509,9 +53827,9 @@ const char* resolve_binary_relative_std(const char* rel_file) {
         cur_dir = path_dirname_to_str(cur_dir);
 #line 161 "src/main.vl"
         hops += 1;
-        __loop_cont_566: __attribute__((unused));
+        __loop_cont_567: __attribute__((unused));
     }
-    __loop_break_566: __attribute__((unused));
+    __loop_break_567: __attribute__((unused));
 #line 163 "src/main.vl"
     return "";
 }
@@ -53732,9 +54050,9 @@ void load_file_and_deps_ex(CompilerDriver* d, const char* raw_path, bool is_std)
         }
 #line 292 "src/main.vl"
         cur = cur->next;
-        __loop_cont_567: __attribute__((unused));
+        __loop_cont_568: __attribute__((unused));
     }
-    __loop_break_567: __attribute__((unused));
+    __loop_break_568: __attribute__((unused));
 #line 296 "src/main.vl"
     StmtNode* decl = prog->first_decl;
 #line 297 "src/main.vl"
@@ -53774,9 +54092,9 @@ void load_file_and_deps_ex(CompilerDriver* d, const char* raw_path, bool is_std)
         }
 #line 318 "src/main.vl"
         decl = nxt;
-        __loop_cont_568: __attribute__((unused));
+        __loop_cont_569: __attribute__((unused));
     }
-    __loop_break_568: __attribute__((unused));
+    __loop_break_569: __attribute__((unused));
 #line 251 "src/main.vl"
     heap_free_str(source);
 }
@@ -53911,9 +54229,9 @@ bool recon_starts_with(const char* s, const char* prefix) {
         }
 #line 30 "src/main.vl"
         i += 1;
-        __loop_cont_569: __attribute__((unused));
+        __loop_cont_570: __attribute__((unused));
     }
-    __loop_break_569: __attribute__((unused));
+    __loop_break_570: __attribute__((unused));
 #line 32 "src/main.vl"
     return true;
 }
@@ -53948,13 +54266,13 @@ int32_t recon_rfind(const char* s, const char* needle) {
 #line 50 "src/main.vl"
                 matches = false;
 #line 51 "src/main.vl"
-                goto __loop_break_571;
+                goto __loop_break_572;
             }
 #line 53 "src/main.vl"
             j += 1;
-            __loop_cont_571: __attribute__((unused));
+            __loop_cont_572: __attribute__((unused));
         }
-        __loop_break_571: __attribute__((unused));
+        __loop_break_572: __attribute__((unused));
 #line 55 "src/main.vl"
         if (matches) {
 #line 56 "src/main.vl"
@@ -53962,9 +54280,9 @@ int32_t recon_rfind(const char* s, const char* needle) {
         }
 #line 58 "src/main.vl"
         i += 1;
-        __loop_cont_570: __attribute__((unused));
+        __loop_cont_571: __attribute__((unused));
     }
-    __loop_break_570: __attribute__((unused));
+    __loop_break_571: __attribute__((unused));
 #line 60 "src/main.vl"
     return last;
 }
@@ -53998,9 +54316,9 @@ bool recon_is_single_file(const char* source) {
             for (int32_t it = 0; (((i < n) && velo_cmp_ne_u_s(source[i], '\n'))); it++) {
 #line 80 "src/main.vl"
                 i += 1;
-                __loop_cont_573: __attribute__((unused));
+                __loop_cont_574: __attribute__((unused));
             }
-            __loop_break_573: __attribute__((unused));
+            __loop_break_574: __attribute__((unused));
         } else
 #line 82 "src/main.vl"
         if (((velo_cmp_eq_u_s(c, '/') && ((i + 1) < n)) && velo_cmp_eq_u_s(source[(i + 1)], '*'))) {
@@ -54010,9 +54328,9 @@ bool recon_is_single_file(const char* source) {
             for (int32_t it = 0; ((((i + 1) < n) && (!(velo_cmp_eq_u_s(source[i], '*') && velo_cmp_eq_u_s(source[(i + 1)], '/'))))); it++) {
 #line 85 "src/main.vl"
                 i += 1;
-                __loop_cont_574: __attribute__((unused));
+                __loop_cont_575: __attribute__((unused));
             }
-            __loop_break_574: __attribute__((unused));
+            __loop_break_575: __attribute__((unused));
 #line 87 "src/main.vl"
             if (((i + 1) < n)) {
 #line 88 "src/main.vl"
@@ -54035,9 +54353,9 @@ bool recon_is_single_file(const char* source) {
                 }
 #line 98 "src/main.vl"
                 i += 1;
-                __loop_cont_575: __attribute__((unused));
+                __loop_cont_576: __attribute__((unused));
             }
-            __loop_break_575: __attribute__((unused));
+            __loop_break_576: __attribute__((unused));
 #line 100 "src/main.vl"
             if ((i < n)) {
 #line 101 "src/main.vl"
@@ -54052,9 +54370,9 @@ bool recon_is_single_file(const char* source) {
             for (int32_t it = 0; (((i < n) && velo_cmp_ne_u_s(source[i], '`'))); it++) {
 #line 106 "src/main.vl"
                 i += 1;
-                __loop_cont_576: __attribute__((unused));
+                __loop_cont_577: __attribute__((unused));
             }
-            __loop_break_576: __attribute__((unused));
+            __loop_break_577: __attribute__((unused));
 #line 108 "src/main.vl"
             if ((i < n)) {
 #line 109 "src/main.vl"
@@ -54069,9 +54387,9 @@ bool recon_is_single_file(const char* source) {
             for (int32_t it = 0; (((i < n) && is_ident_part(source[i]))); it++) {
 #line 114 "src/main.vl"
                 i += 1;
-                __loop_cont_577: __attribute__((unused));
+                __loop_cont_578: __attribute__((unused));
             }
-            __loop_break_577: __attribute__((unused));
+            __loop_break_578: __attribute__((unused));
 #line 116 "src/main.vl"
             const char* id = copy_slice_to_string(source, start, (i - start));
 #line 117 "src/main.vl"
@@ -54095,9 +54413,9 @@ bool recon_is_single_file(const char* source) {
                         for (int32_t it = 0; (((i < n) && velo_cmp_ne_u_s(source[i], '\n'))); it++) {
 #line 126 "src/main.vl"
                             i += 1;
-                            __loop_cont_579: __attribute__((unused));
+                            __loop_cont_580: __attribute__((unused));
                         }
-                        __loop_break_579: __attribute__((unused));
+                        __loop_break_580: __attribute__((unused));
                     } else
 #line 128 "src/main.vl"
                     if (((velo_cmp_eq_u_s(sc, '/') && ((i + 1) < n)) && velo_cmp_eq_u_s(source[(i + 1)], '*'))) {
@@ -54107,9 +54425,9 @@ bool recon_is_single_file(const char* source) {
                         for (int32_t it = 0; ((((i + 1) < n) && (!(velo_cmp_eq_u_s(source[i], '*') && velo_cmp_eq_u_s(source[(i + 1)], '/'))))); it++) {
 #line 131 "src/main.vl"
                             i += 1;
-                            __loop_cont_580: __attribute__((unused));
+                            __loop_cont_581: __attribute__((unused));
                         }
-                        __loop_break_580: __attribute__((unused));
+                        __loop_break_581: __attribute__((unused));
 #line 133 "src/main.vl"
                         if (((i + 1) < n)) {
 #line 134 "src/main.vl"
@@ -54122,9 +54440,9 @@ bool recon_is_single_file(const char* source) {
 #line 139 "src/main.vl"
                         scanning = false;
                     }
-                    __loop_cont_578: __attribute__((unused));
+                    __loop_cont_579: __attribute__((unused));
                 }
-                __loop_break_578: __attribute__((unused));
+                __loop_break_579: __attribute__((unused));
 #line 142 "src/main.vl"
                 if (((i < n) && velo_cmp_eq_u_s(source[i], '"'))) {
 #line 143 "src/main.vl"
@@ -54140,9 +54458,9 @@ bool recon_is_single_file(const char* source) {
                         }
 #line 149 "src/main.vl"
                         i += 1;
-                        __loop_cont_581: __attribute__((unused));
+                        __loop_cont_582: __attribute__((unused));
                     }
-                    __loop_break_581: __attribute__((unused));
+                    __loop_break_582: __attribute__((unused));
 #line 151 "src/main.vl"
                     const char* qmod = copy_slice_to_string(source, qstart, (i - qstart));
 #line 152 "src/main.vl"
@@ -54164,9 +54482,9 @@ bool recon_is_single_file(const char* source) {
                     for (int32_t it = 0; (((i < n) && (is_ident_part(source[i]) || velo_cmp_eq_u_s(source[i], '.')))); it++) {
 #line 161 "src/main.vl"
                         i += 1;
-                        __loop_cont_582: __attribute__((unused));
+                        __loop_cont_583: __attribute__((unused));
                     }
-                    __loop_break_582: __attribute__((unused));
+                    __loop_break_583: __attribute__((unused));
 #line 163 "src/main.vl"
                     const char* dmod = copy_slice_to_string(source, mstart, (i - mstart));
 #line 164 "src/main.vl"
@@ -54180,9 +54498,9 @@ bool recon_is_single_file(const char* source) {
 #line 170 "src/main.vl"
             i += 1;
         }
-        __loop_cont_572: __attribute__((unused));
+        __loop_cont_573: __attribute__((unused));
     }
-    __loop_break_572: __attribute__((unused));
+    __loop_break_573: __attribute__((unused));
 #line 173 "src/main.vl"
     return true;
 }
@@ -54213,9 +54531,9 @@ void recon_emit_pretty(const char* captured, const char* src_path) {
         }
 #line 192 "src/main.vl"
         i += 1;
-        __loop_cont_583: __attribute__((unused));
+        __loop_cont_584: __attribute__((unused));
     }
-    __loop_break_583: __attribute__((unused));
+    __loop_break_584: __attribute__((unused));
 #line 195 "src/main.vl"
     size_t* starts = ((size_t*)velo_mem_alloc(sizeof(size_t), (size_t)(line_count)));
 #line 196 "src/main.vl"
@@ -54248,9 +54566,9 @@ void recon_emit_pretty(const char* captured, const char* src_path) {
         }
 #line 212 "src/main.vl"
         i += 1;
-        __loop_cont_584: __attribute__((unused));
+        __loop_cont_585: __attribute__((unused));
     }
-    __loop_break_584: __attribute__((unused));
+    __loop_break_585: __attribute__((unused));
 #line 215 "src/main.vl"
     size_t k = 0;
 #line 216 "src/main.vl"
@@ -54304,9 +54622,9 @@ void recon_emit_pretty(const char* captured, const char* src_path) {
                     for (int32_t it = 0; ((velo_cmp_gt_u_s(cs, 0) && is_digit(rest[(cs - 1)]))); it++) {
 #line 246 "src/main.vl"
                         cs -= 1;
-                        __loop_cont_586: __attribute__((unused));
+                        __loop_cont_587: __attribute__((unused));
                     }
-                    __loop_break_586: __attribute__((unused));
+                    __loop_break_587: __attribute__((unused));
 #line 248 "src/main.vl"
                     if ((((cs < le) && velo_cmp_gt_u_s(cs, 0)) && velo_cmp_eq_u_s(rest[(cs - 1)], ':'))) {
 #line 249 "src/main.vl"
@@ -54315,9 +54633,9 @@ void recon_emit_pretty(const char* captured, const char* src_path) {
                         for (int32_t it = 0; ((velo_cmp_gt_u_s(ls, 0) && is_digit(rest[(ls - 1)]))); it++) {
 #line 251 "src/main.vl"
                             ls -= 1;
-                            __loop_cont_587: __attribute__((unused));
+                            __loop_cont_588: __attribute__((unused));
                         }
-                        __loop_break_587: __attribute__((unused));
+                        __loop_break_588: __attribute__((unused));
 #line 253 "src/main.vl"
                         if (((((ls < (cs - 1)) && velo_cmp_gt_u_s(ls, 0)) && velo_cmp_eq_u_s(rest[(ls - 1)], ':')) && velo_cmp_gt_u_s(ls, 1))) {
 #line 254 "src/main.vl"
@@ -54347,9 +54665,9 @@ void recon_emit_pretty(const char* captured, const char* src_path) {
         }
 #line 270 "src/main.vl"
         k += 1;
-        __loop_cont_585: __attribute__((unused));
+        __loop_cont_586: __attribute__((unused));
     }
-    __loop_break_585: __attribute__((unused));
+    __loop_break_586: __attribute__((unused));
 #line 273 "src/main.vl"
     if ((source != NULL)) {
 #line 274 "src/main.vl"
@@ -54395,9 +54713,9 @@ bool check_starts_with(const char* s, const char* prefix) {
         }
 #line 66 "src/main.vl"
         i += 1;
-        __loop_cont_588: __attribute__((unused));
+        __loop_cont_589: __attribute__((unused));
     }
-    __loop_break_588: __attribute__((unused));
+    __loop_break_589: __attribute__((unused));
 #line 68 "src/main.vl"
     return true;
 }
@@ -54430,9 +54748,9 @@ int32_t check_rfind(const char* s, const char* needle) {
         }
 #line 86 "src/main.vl"
         i += 1;
-        __loop_cont_589: __attribute__((unused));
+        __loop_cont_590: __attribute__((unused));
     }
-    __loop_break_589: __attribute__((unused));
+    __loop_break_590: __attribute__((unused));
 #line 88 "src/main.vl"
     return last;
 }
@@ -54452,9 +54770,9 @@ bool check_match_at(const char* s, const char* needle, size_t start) {
         }
 #line 99 "src/main.vl"
         j += 1;
-        __loop_cont_590: __attribute__((unused));
+        __loop_cont_591: __attribute__((unused));
     }
-    __loop_break_590: __attribute__((unused));
+    __loop_break_591: __attribute__((unused));
 #line 101 "src/main.vl"
     return true;
 }
@@ -54499,9 +54817,9 @@ void check_json_escape(StringBuilder* sb, const char* s) {
         }
 #line 123 "src/main.vl"
         i += 1;
-        __loop_cont_591: __attribute__((unused));
+        __loop_cont_592: __attribute__((unused));
     }
-    __loop_break_591: __attribute__((unused));
+    __loop_break_592: __attribute__((unused));
 }
 
 #line 131 "src/main.vl"
@@ -54540,9 +54858,9 @@ void check_diag_to_json(StringBuilder* sb, const char* line_text, const char* sr
         for (int32_t it = 0; ((velo_cmp_gt_u_s(cs, 0) && is_digit(rest[(cs - 1)]))); it++) {
 #line 151 "src/main.vl"
             cs -= 1;
-            __loop_cont_592: __attribute__((unused));
+            __loop_cont_593: __attribute__((unused));
         }
-        __loop_break_592: __attribute__((unused));
+        __loop_break_593: __attribute__((unused));
 #line 153 "src/main.vl"
         if ((((cs < le) && velo_cmp_gt_u_s(cs, 0)) && velo_cmp_eq_u_s(rest[(cs - 1)], ':'))) {
 #line 154 "src/main.vl"
@@ -54551,9 +54869,9 @@ void check_diag_to_json(StringBuilder* sb, const char* line_text, const char* sr
             for (int32_t it = 0; ((velo_cmp_gt_u_s(ls, 0) && is_digit(rest[(ls - 1)]))); it++) {
 #line 156 "src/main.vl"
                 ls -= 1;
-                __loop_cont_593: __attribute__((unused));
+                __loop_cont_594: __attribute__((unused));
             }
-            __loop_break_593: __attribute__((unused));
+            __loop_break_594: __attribute__((unused));
 #line 158 "src/main.vl"
             if (((((ls < (cs - 1)) && velo_cmp_gt_u_s(ls, 0)) && velo_cmp_eq_u_s(rest[(ls - 1)], ':')) && velo_cmp_gt_u_s(ls, 1))) {
 #line 159 "src/main.vl"
@@ -54654,9 +54972,9 @@ bool check_is_noise(const char* line_text) {
         }
 #line 222 "src/main.vl"
         i += 1;
-        __loop_cont_594: __attribute__((unused));
+        __loop_cont_595: __attribute__((unused));
     }
-    __loop_break_594: __attribute__((unused));
+    __loop_break_595: __attribute__((unused));
 #line 224 "src/main.vl"
     return all_blank;
 }
@@ -54699,9 +55017,9 @@ int32_t check_count_errors(const char* captured) {
         }
 #line 250 "src/main.vl"
         i += 1;
-        __loop_cont_595: __attribute__((unused));
+        __loop_cont_596: __attribute__((unused));
     }
-    __loop_break_595: __attribute__((unused));
+    __loop_break_596: __attribute__((unused));
 #line 252 "src/main.vl"
     return count;
 }
@@ -54753,9 +55071,9 @@ const char* check_build_json(const char* captured, const char* src_path, bool ok
         }
 #line 282 "src/main.vl"
         i += 1;
-        __loop_cont_596: __attribute__((unused));
+        __loop_cont_597: __attribute__((unused));
     }
-    __loop_break_596: __attribute__((unused));
+    __loop_break_597: __attribute__((unused));
 #line 285 "src/main.vl"
     StringBuilder out = create_sb((n + 256));
 #line 286 "src/main.vl"
@@ -55138,9 +55456,9 @@ bool json_unescape(StrSlice raw, uint8_t* dest, size_t dest_cap, size_t* out_len
                     code = ((code << 4) | ((uint32_t)(hv)));
 #line 82 "src/main.vl"
                     k += 1;
-                    __loop_cont_598: __attribute__((unused));
+                    __loop_cont_599: __attribute__((unused));
                 }
-                __loop_break_598: __attribute__((unused));
+                __loop_break_599: __attribute__((unused));
 #line 84 "src/main.vl"
                 r_idx += 4;
 #line 86 "src/main.vl"
@@ -55164,15 +55482,15 @@ bool json_unescape(StrSlice raw, uint8_t* dest, size_t dest_cap, size_t* out_len
 #line 94 "src/main.vl"
                                 valid_low = false;
 #line 94 "src/main.vl"
-                                goto __loop_break_599;
+                                goto __loop_break_600;
                             }
 #line 95 "src/main.vl"
                             low_code = ((low_code << 4) | ((uint32_t)(lhv)));
 #line 96 "src/main.vl"
                             lk += 1;
-                            __loop_cont_599: __attribute__((unused));
+                            __loop_cont_600: __attribute__((unused));
                         }
-                        __loop_break_599: __attribute__((unused));
+                        __loop_break_600: __attribute__((unused));
 #line 98 "src/main.vl"
                         if (((valid_low && (low_code >= ((uint32_t)(0xDC00)))) && (low_code <= ((uint32_t)(0xDFFF))))) {
 #line 99 "src/main.vl"
@@ -55196,9 +55514,9 @@ bool json_unescape(StrSlice raw, uint8_t* dest, size_t dest_cap, size_t* out_len
                 return false;
             }
         }
-        __loop_cont_597: __attribute__((unused));
+        __loop_cont_598: __attribute__((unused));
     }
-    __loop_break_597: __attribute__((unused));
+    __loop_break_598: __attribute__((unused));
 #line 114 "src/main.vl"
     if ((w_idx < dest_cap)) {
 #line 115 "src/main.vl"
@@ -55282,9 +55600,9 @@ bool parse_u64(StrSlice s, uint64_t* out_val) {
         acc = ((acc * ((uint64_t)(10))) + digit);
 #line 42 "src/main.vl"
         i += 1;
-        __loop_cont_600: __attribute__((unused));
+        __loop_cont_601: __attribute__((unused));
     }
-    __loop_break_600: __attribute__((unused));
+    __loop_break_601: __attribute__((unused));
 #line 45 "src/main.vl"
     if ((out_val != NULL)) {
 #line 46 "src/main.vl"
@@ -55355,9 +55673,9 @@ bool parse_i64(StrSlice s, int64_t* out_val) {
         acc = ((acc * ((uint64_t)(10))) + digit);
 #line 93 "src/main.vl"
         i += 1;
-        __loop_cont_601: __attribute__((unused));
+        __loop_cont_602: __attribute__((unused));
     }
-    __loop_break_601: __attribute__((unused));
+    __loop_break_602: __attribute__((unused));
 #line 96 "src/main.vl"
     if ((out_val != NULL)) {
 #line 97 "src/main.vl"
@@ -55484,9 +55802,9 @@ bool parse_u64_radix(StrSlice s, uint32_t radix, uint64_t* out_val) {
         acc = ((acc * rad_u64) + digit);
 #line 176 "src/main.vl"
         i += 1;
-        __loop_cont_602: __attribute__((unused));
+        __loop_cont_603: __attribute__((unused));
     }
-    __loop_break_602: __attribute__((unused));
+    __loop_break_603: __attribute__((unused));
 #line 179 "src/main.vl"
     if ((out_val != NULL)) {
 #line 180 "src/main.vl"
@@ -55732,11 +56050,11 @@ void json_skip_whitespace(JsonLexer* lex) {
             lex->col = 1;
         } else {
 #line 83 "src/main.vl"
-            goto __loop_break_603;
+            goto __loop_break_604;
         }
-        __loop_cont_603: __attribute__((unused));
+        __loop_cont_604: __attribute__((unused));
     }
-    __loop_break_603: __attribute__((unused));
+    __loop_break_604: __attribute__((unused));
 }
 
 #line 89 "src/main.vl"
@@ -55850,7 +56168,7 @@ JsonToken json_lexer_next(JsonLexer* lex) {
 #line 157 "src/main.vl"
                 closed = true;
 #line 158 "src/main.vl"
-                goto __loop_break_604;
+                goto __loop_break_605;
             }
 #line 160 "src/main.vl"
             if ((sb == ((uint8_t)(92)))) {
@@ -55898,9 +56216,9 @@ JsonToken json_lexer_next(JsonLexer* lex) {
                         lex->col += 1;
 #line 175 "src/main.vl"
                         k += 1;
-                        __loop_cont_605: __attribute__((unused));
+                        __loop_cont_606: __attribute__((unused));
                     }
-                    __loop_break_605: __attribute__((unused));
+                    __loop_break_606: __attribute__((unused));
                 } else {
 #line 178 "src/main.vl"
                     return json_make_error(lex, start_pos, start_line, start_col);
@@ -55916,9 +56234,9 @@ JsonToken json_lexer_next(JsonLexer* lex) {
 #line 184 "src/main.vl"
                 lex->col += 1;
             }
-            __loop_cont_604: __attribute__((unused));
+            __loop_cont_605: __attribute__((unused));
         }
-        __loop_break_604: __attribute__((unused));
+        __loop_break_605: __attribute__((unused));
 #line 187 "src/main.vl"
         if ((!closed)) {
 #line 188 "src/main.vl"
@@ -56018,9 +56336,9 @@ JsonToken json_lexer_next(JsonLexer* lex) {
                 lex->pos += 1;
 #line 269 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_606: __attribute__((unused));
+                __loop_cont_607: __attribute__((unused));
             }
-            __loop_break_606: __attribute__((unused));
+            __loop_break_607: __attribute__((unused));
         } else {
 #line 272 "src/main.vl"
             return json_make_error(lex, start_pos, start_line, start_col);
@@ -56042,9 +56360,9 @@ JsonToken json_lexer_next(JsonLexer* lex) {
                 lex->pos += 1;
 #line 282 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_607: __attribute__((unused));
+                __loop_cont_608: __attribute__((unused));
             }
-            __loop_break_607: __attribute__((unused));
+            __loop_break_608: __attribute__((unused));
         }
 #line 287 "src/main.vl"
         if (((lex->pos < lex->len) && ((lex->src[lex->pos] == ((uint8_t)(101))) || (lex->src[lex->pos] == ((uint8_t)(69)))))) {
@@ -56070,9 +56388,9 @@ JsonToken json_lexer_next(JsonLexer* lex) {
                 lex->pos += 1;
 #line 296 "src/main.vl"
                 lex->col += 1;
-                __loop_cont_608: __attribute__((unused));
+                __loop_cont_609: __attribute__((unused));
             }
-            __loop_break_608: __attribute__((unused));
+            __loop_break_609: __attribute__((unused));
         }
 #line 301 "src/main.vl"
         if (((lex->pos < lex->len) && (!json_is_term_char(lex->src[lex->pos])))) {
@@ -56147,9 +56465,9 @@ bool json_token_is_float(JsonToken* tok) {
         }
 #line 351 "src/main.vl"
         idx += 1;
-        __loop_cont_609: __attribute__((unused));
+        __loop_cont_610: __attribute__((unused));
     }
-    __loop_break_609: __attribute__((unused));
+    __loop_break_610: __attribute__((unused));
 #line 353 "src/main.vl"
     return false;
 }
@@ -56295,9 +56613,9 @@ JsonValue* json_array_get(JsonValue* arr, size_t idx) {
         cur = cur->next;
 #line 35 "src/main.vl"
         i += 1;
-        __loop_cont_610: __attribute__((unused));
+        __loop_cont_611: __attribute__((unused));
     }
-    __loop_break_610: __attribute__((unused));
+    __loop_break_611: __attribute__((unused));
 #line 37 "src/main.vl"
     return cur;
 }
@@ -56336,9 +56654,9 @@ void json_obj_put(JsonValue* obj, StrSlice key, JsonValue* val) {
         }
 #line 56 "src/main.vl"
         cur = cur->next;
-        __loop_cont_611: __attribute__((unused));
+        __loop_cont_612: __attribute__((unused));
     }
-    __loop_break_611: __attribute__((unused));
+    __loop_break_612: __attribute__((unused));
 #line 59 "src/main.vl"
     val->key = key;
 #line 60 "src/main.vl"
@@ -56383,9 +56701,9 @@ JsonValue* json_obj_get(JsonValue* obj, StrSlice key) {
         }
 #line 82 "src/main.vl"
         cur = cur->next;
-        __loop_cont_612: __attribute__((unused));
+        __loop_cont_613: __attribute__((unused));
     }
-    __loop_break_612: __attribute__((unused));
+    __loop_break_613: __attribute__((unused));
 #line 84 "src/main.vl"
     return NULL;
 }
@@ -56529,9 +56847,9 @@ bool json_value_eq(JsonValue* a, JsonValue* b) {
             ca = ca->next;
 #line 157 "src/main.vl"
             cb = cb->next;
-            __loop_cont_613: __attribute__((unused));
+            __loop_cont_614: __attribute__((unused));
         }
-        __loop_break_613: __attribute__((unused));
+        __loop_break_614: __attribute__((unused));
 #line 159 "src/main.vl"
         return ((ca == NULL) && (cb == NULL));
     }
@@ -56555,9 +56873,9 @@ bool json_value_eq(JsonValue* a, JsonValue* b) {
             }
 #line 167 "src/main.vl"
             ca = ca->next;
-            __loop_cont_614: __attribute__((unused));
+            __loop_cont_615: __attribute__((unused));
         }
-        __loop_break_614: __attribute__((unused));
+        __loop_break_615: __attribute__((unused));
 #line 169 "src/main.vl"
         return true;
     }
@@ -56609,9 +56927,9 @@ JsonValue* json_value_clone(Arena* a, JsonValue* v) {
             json_array_push(arr, json_value_clone(a, cur));
 #line 187 "src/main.vl"
             cur = cur->next;
-            __loop_cont_615: __attribute__((unused));
+            __loop_cont_616: __attribute__((unused));
         }
-        __loop_break_615: __attribute__((unused));
+        __loop_break_616: __attribute__((unused));
 #line 189 "src/main.vl"
         return arr;
     }
@@ -56627,9 +56945,9 @@ JsonValue* json_value_clone(Arena* a, JsonValue* v) {
             json_obj_put(obj, cur->key, json_value_clone(a, cur));
 #line 196 "src/main.vl"
             cur = cur->next;
-            __loop_cont_616: __attribute__((unused));
+            __loop_cont_617: __attribute__((unused));
         }
-        __loop_break_616: __attribute__((unused));
+        __loop_break_617: __attribute__((unused));
 #line 198 "src/main.vl"
         return obj;
     }
@@ -56913,9 +57231,9 @@ void json_heap_free(JsonValue* v) {
             json_heap_free(c);
 #line 160 "src/main.vl"
             c = next_c;
-            __loop_cont_617: __attribute__((unused));
+            __loop_cont_618: __attribute__((unused));
         }
-        __loop_break_617: __attribute__((unused));
+        __loop_break_618: __attribute__((unused));
     }
 #line 163 "src/main.vl"
     heap_free(((uint8_t*)(v)));
@@ -57165,9 +57483,9 @@ bool slice_has_escape(StrSlice s) {
         }
 #line 41 "src/main.vl"
         i += 1;
-        __loop_cont_618: __attribute__((unused));
+        __loop_cont_619: __attribute__((unused));
     }
-    __loop_break_618: __attribute__((unused));
+    __loop_break_619: __attribute__((unused));
 #line 43 "src/main.vl"
     return false;
 }
@@ -57310,7 +57628,7 @@ JsonValue* json_parse_value(JsonParser* p) {
 #line 131 "src/main.vl"
             if ((sep.kind == JSON_TOK_ARR_END)) {
 #line 132 "src/main.vl"
-                goto __loop_break_619;
+                goto __loop_break_620;
             }
 #line 134 "src/main.vl"
             if ((sep.kind == JSON_TOK_COMMA)) {
@@ -57329,9 +57647,9 @@ JsonValue* json_parse_value(JsonParser* p) {
 #line 142 "src/main.vl"
                 return NULL;
             }
-            __loop_cont_619: __attribute__((unused));
+            __loop_cont_620: __attribute__((unused));
         }
-        __loop_break_619: __attribute__((unused));
+        __loop_break_620: __attribute__((unused));
 #line 145 "src/main.vl"
         return arr;
     }
@@ -57386,7 +57704,7 @@ JsonValue* json_parse_value(JsonParser* p) {
 #line 175 "src/main.vl"
             if ((sep.kind == JSON_TOK_OBJ_END)) {
 #line 176 "src/main.vl"
-                goto __loop_break_620;
+                goto __loop_break_621;
             }
 #line 178 "src/main.vl"
             if ((sep.kind == JSON_TOK_COMMA)) {
@@ -57405,9 +57723,9 @@ JsonValue* json_parse_value(JsonParser* p) {
 #line 186 "src/main.vl"
                 return NULL;
             }
-            __loop_cont_620: __attribute__((unused));
+            __loop_cont_621: __attribute__((unused));
         }
-        __loop_break_620: __attribute__((unused));
+        __loop_break_621: __attribute__((unused));
 #line 189 "src/main.vl"
         return obj;
     }
@@ -57676,9 +57994,9 @@ void json_write_escaped_str(StrBuilder* sb, StrSlice s) {
             }
 #line 47 "src/main.vl"
             i += 1;
-            __loop_cont_621: __attribute__((unused));
+            __loop_cont_622: __attribute__((unused));
         }
-        __loop_break_621: __attribute__((unused));
+        __loop_break_622: __attribute__((unused));
     }
 #line 50 "src/main.vl"
     sb_append_byte(sb, ((uint8_t)(34)));
@@ -57701,13 +58019,13 @@ StrSlice trim_json_float(StrSlice s) {
 #line 61 "src/main.vl"
             dot_idx = i;
 #line 62 "src/main.vl"
-            goto __loop_break_622;
+            goto __loop_break_623;
         }
 #line 64 "src/main.vl"
         i += 1;
-        __loop_cont_622: __attribute__((unused));
+        __loop_cont_623: __attribute__((unused));
     }
-    __loop_break_622: __attribute__((unused));
+    __loop_break_623: __attribute__((unused));
 #line 66 "src/main.vl"
     if ((!has_dot)) {
 #line 66 "src/main.vl"
@@ -57719,9 +58037,9 @@ StrSlice trim_json_float(StrSlice s) {
     for (int32_t it = 0; (((end > (dot_idx + 2)) && (s.ptr[(end - 1)] == ((uint8_t)(48))))); it++) {
 #line 70 "src/main.vl"
         end -= 1;
-        __loop_cont_623: __attribute__((unused));
+        __loop_cont_624: __attribute__((unused));
     }
-    __loop_break_623: __attribute__((unused));
+    __loop_break_624: __attribute__((unused));
 #line 72 "src/main.vl"
     return slice_sub(s, 0, end);
 }
@@ -57745,9 +58063,9 @@ void json_write_indent(StrBuilder* sb, int32_t depth, int32_t indent_size) {
         sb_append_byte(sb, ((uint8_t)(32)));
 #line 83 "src/main.vl"
         i += 1;
-        __loop_cont_624: __attribute__((unused));
+        __loop_cont_625: __attribute__((unused));
     }
-    __loop_break_624: __attribute__((unused));
+    __loop_break_625: __attribute__((unused));
 }
 
 #line 88 "src/main.vl"
@@ -57835,9 +58153,9 @@ void json_write_internal(StrBuilder* sb, JsonValue* v, int32_t depth, int32_t in
             }
 #line 140 "src/main.vl"
             cur = cur->next;
-            __loop_cont_625: __attribute__((unused));
+            __loop_cont_626: __attribute__((unused));
         }
-        __loop_break_625: __attribute__((unused));
+        __loop_break_626: __attribute__((unused));
 #line 142 "src/main.vl"
         json_write_indent(sb, depth, indent_size);
 #line 143 "src/main.vl"
@@ -57881,9 +58199,9 @@ void json_write_internal(StrBuilder* sb, JsonValue* v, int32_t depth, int32_t in
             }
 #line 166 "src/main.vl"
             cur = cur->next;
-            __loop_cont_626: __attribute__((unused));
+            __loop_cont_627: __attribute__((unused));
         }
-        __loop_break_626: __attribute__((unused));
+        __loop_break_627: __attribute__((unused));
 #line 168 "src/main.vl"
         json_write_indent(sb, depth, indent_size);
 #line 169 "src/main.vl"
@@ -58025,9 +58343,9 @@ bool parse_semver_component(const char* s, size_t start_idx, size_t end_idx, int
         val = ((val * 10) + ((int64_t)((c - '0'))));
 #line 38 "src/main.vl"
         i += 1;
-        __loop_cont_627: __attribute__((unused));
+        __loop_cont_628: __attribute__((unused));
     }
-    __loop_break_627: __attribute__((unused));
+    __loop_break_628: __attribute__((unused));
 #line 40 "src/main.vl"
     out_val[0] = val;
 #line 41 "src/main.vl"
@@ -58068,9 +58386,9 @@ SemVer semver_parse(const char* s) {
     for (int32_t it = 0; ((((core_end < slen) && velo_cmp_ne_u_s(s[core_end], '-')) && velo_cmp_ne_u_s(s[core_end], '+'))); it++) {
 #line 61 "src/main.vl"
         core_end += 1;
-        __loop_cont_628: __attribute__((unused));
+        __loop_cont_629: __attribute__((unused));
     }
-    __loop_break_628: __attribute__((unused));
+    __loop_break_629: __attribute__((unused));
 #line 65 "src/main.vl"
     size_t dot1 = slen;
 #line 66 "src/main.vl"
@@ -58097,9 +58415,9 @@ SemVer semver_parse(const char* s) {
         }
 #line 79 "src/main.vl"
         i += 1;
-        __loop_cont_629: __attribute__((unused));
+        __loop_cont_630: __attribute__((unused));
     }
-    __loop_break_629: __attribute__((unused));
+    __loop_break_630: __attribute__((unused));
 #line 82 "src/main.vl"
     if (((dot1 == slen) || (dot2 == slen))) {
 #line 83 "src/main.vl"
@@ -58273,9 +58591,9 @@ SemVerReq semver_parse_req(const char* req_str) {
     for (int32_t it = 0; (((v_start < tlen) && (velo_cmp_eq_u_s(trimmed[v_start], ' ') || velo_cmp_eq_u_s(trimmed[v_start], '\t')))); it++) {
 #line 186 "src/main.vl"
         v_start += 1;
-        __loop_cont_630: __attribute__((unused));
+        __loop_cont_631: __attribute__((unused));
     }
-    __loop_break_630: __attribute__((unused));
+    __loop_break_631: __attribute__((unused));
 #line 188 "src/main.vl"
     if ((v_start >= tlen)) {
 #line 189 "src/main.vl"
@@ -58302,9 +58620,9 @@ SemVerReq semver_parse_req(const char* req_str) {
         }
 #line 204 "src/main.vl"
         p += 1;
-        __loop_cont_631: __attribute__((unused));
+        __loop_cont_632: __attribute__((unused));
     }
-    __loop_break_631: __attribute__((unused));
+    __loop_break_632: __attribute__((unused));
 #line 208 "src/main.vl"
     SemVer parsed = semver_parse(v_str);
 #line 209 "src/main.vl"
@@ -58322,9 +58640,9 @@ SemVerReq semver_parse_req(const char* req_str) {
             }
 #line 215 "src/main.vl"
             d += 1;
-            __loop_cont_632: __attribute__((unused));
+            __loop_cont_633: __attribute__((unused));
         }
-        __loop_break_632: __attribute__((unused));
+        __loop_break_633: __attribute__((unused));
 #line 217 "src/main.vl"
         if ((dot_count == 0)) {
 #line 219 "src/main.vl"
@@ -58431,9 +58749,9 @@ const char* json_slice_to_str(StrSlice s) {
         buf[i] = s.ptr[i];
 #line 32 "src/main.vl"
         i += 1;
-        __loop_cont_633: __attribute__((unused));
+        __loop_cont_634: __attribute__((unused));
     }
-    __loop_break_633: __attribute__((unused));
+    __loop_break_634: __attribute__((unused));
 #line 34 "src/main.vl"
     buf[s.len] = ((uint8_t)(0));
 #line 35 "src/main.vl"
@@ -58922,9 +59240,9 @@ DepLocation manifest_resolve_dep_full(const char* m_dir, DependencySpec* dep, bo
             }
 #line 342 "src/main.vl"
             cur_child = cur_child->next;
-            __loop_cont_634: __attribute__((unused));
+            __loop_cont_635: __attribute__((unused));
         }
-        __loop_break_634: __attribute__((unused));
+        __loop_break_635: __attribute__((unused));
 #line 345 "src/main.vl"
         if ((best_obj == NULL)) {
 #line 346 "src/main.vl"
@@ -59061,16 +59379,16 @@ void mlex_advance(ManifestLexer* lex) {
             for (int32_t it = 0; (((lex->pos < n) && velo_cmp_ne_u_s(src[lex->pos], '\n'))); it++) {
 #line 100 "src/main.vl"
                 lex->pos += 1;
-                __loop_cont_636: __attribute__((unused));
+                __loop_cont_637: __attribute__((unused));
             }
-            __loop_break_636: __attribute__((unused));
+            __loop_break_637: __attribute__((unused));
         } else {
 #line 101 "src/main.vl"
-            goto __loop_break_635;
+            goto __loop_break_636;
         }
-        __loop_cont_635: __attribute__((unused));
+        __loop_cont_636: __attribute__((unused));
     }
-    __loop_break_635: __attribute__((unused));
+    __loop_break_636: __attribute__((unused));
 #line 103 "src/main.vl"
     if ((lex->pos >= n)) {
 #line 103 "src/main.vl"
@@ -59251,9 +59569,9 @@ void mlex_advance(ManifestLexer* lex) {
             lex->pos += 1;
 #line 131 "src/main.vl"
             lex->col += 1;
-            __loop_cont_637: __attribute__((unused));
+            __loop_cont_638: __attribute__((unused));
         }
-        __loop_break_637: __attribute__((unused));
+        __loop_break_638: __attribute__((unused));
 #line 133 "src/main.vl"
         if ((lex->pos >= n)) {
 #line 133 "src/main.vl"
@@ -59287,7 +59605,7 @@ void mlex_advance(ManifestLexer* lex) {
 #line 143 "src/main.vl"
             if ((!is_id)) {
 #line 143 "src/main.vl"
-                goto __loop_break_638;
+                goto __loop_break_639;
             }
 #line 144 "src/main.vl"
             sb_append_char((&(sb)), ic);
@@ -59295,9 +59613,9 @@ void mlex_advance(ManifestLexer* lex) {
             lex->pos += 1;
 #line 145 "src/main.vl"
             lex->col += 1;
-            __loop_cont_638: __attribute__((unused));
+            __loop_cont_639: __attribute__((unused));
         }
-        __loop_break_638: __attribute__((unused));
+        __loop_break_639: __attribute__((unused));
 #line 147 "src/main.vl"
         lex->cur_kind = MTOK_IDENT;
 #line 147 "src/main.vl"
@@ -59383,11 +59701,11 @@ void parse_str_list(ManifestLexer* lex, ManifestStringItem** first_out, int32_t*
             mlex_advance(lex);
         } else {
 #line 172 "src/main.vl"
-            goto __loop_break_639;
+            goto __loop_break_640;
         }
-        __loop_cont_639: __attribute__((unused));
+        __loop_cont_640: __attribute__((unused));
     }
-    __loop_break_639: __attribute__((unused));
+    __loop_break_640: __attribute__((unused));
 #line 174 "src/main.vl"
     mlex_expect(lex, MTOK_RBRACKET, "expected ']' closing list");
 }
@@ -59523,9 +59841,9 @@ void parse_manifest_pkg(ManifestLexer* lex, PackageManifest* m) {
 #line 194 "src/main.vl"
             return;
         }
-        __loop_cont_640: __attribute__((unused));
+        __loop_cont_641: __attribute__((unused));
     }
-    __loop_break_640: __attribute__((unused));
+    __loop_break_641: __attribute__((unused));
 #line 197 "src/main.vl"
     mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'pkg' block");
 }
@@ -59675,9 +59993,9 @@ void parse_manifest_deps(ManifestLexer* lex, PackageManifest* m) {
         last = dep;
 #line 234 "src/main.vl"
         m->dep_count += 1;
-        __loop_cont_641: __attribute__((unused));
+        __loop_cont_642: __attribute__((unused));
     }
-    __loop_break_641: __attribute__((unused));
+    __loop_break_642: __attribute__((unused));
 #line 236 "src/main.vl"
     mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'deps' block");
 }
@@ -59736,9 +60054,9 @@ void parse_manifest_link(ManifestLexer* lex, PackageManifest* m) {
 #line 251 "src/main.vl"
             return;
         }
-        __loop_cont_642: __attribute__((unused));
+        __loop_cont_643: __attribute__((unused));
     }
-    __loop_break_642: __attribute__((unused));
+    __loop_break_643: __attribute__((unused));
 #line 254 "src/main.vl"
     mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'link' block");
 }
@@ -59777,7 +60095,7 @@ PackageManifest manifest_parse(const char* source, const char* filename) {
 #line 279 "src/main.vl"
                 mlex_set_err((&(lex)), lex.cur_line, lex.cur_col, "duplicate 'pkg' block");
 #line 279 "src/main.vl"
-                goto __loop_break_643;
+                goto __loop_break_644;
             }
 #line 280 "src/main.vl"
             has_pkg = true;
@@ -59805,11 +60123,11 @@ PackageManifest manifest_parse(const char* source, const char* filename) {
 #line 287 "src/main.vl"
             mlex_set_err((&(lex)), lex.cur_line, lex.cur_col, sb_to_string((&(sb))));
 #line 287 "src/main.vl"
-            goto __loop_break_643;
+            goto __loop_break_644;
         }
-        __loop_cont_643: __attribute__((unused));
+        __loop_cont_644: __attribute__((unused));
     }
-    __loop_break_643: __attribute__((unused));
+    __loop_break_644: __attribute__((unused));
 #line 290 "src/main.vl"
     if (lex.has_error) {
 #line 290 "src/main.vl"
@@ -59900,9 +60218,9 @@ DependencySpec* manifest_find_dep(PackageManifest* m, const char* name) {
         }
 #line 314 "src/main.vl"
         cur = cur->next;
-        __loop_cont_644: __attribute__((unused));
+        __loop_cont_645: __attribute__((unused));
     }
-    __loop_break_644: __attribute__((unused));
+    __loop_break_645: __attribute__((unused));
 #line 316 "src/main.vl"
     return NULL;
 }
@@ -59962,9 +60280,9 @@ const char* bytes_to_hex(uint8_t* bytes, size_t len) {
         out[((i * 2) + 1)] = nibble_to_hex((b & ((uint8_t)(0x0F))));
 #line 39 "src/main.vl"
         i += 1;
-        __loop_cont_645: __attribute__((unused));
+        __loop_cont_646: __attribute__((unused));
     }
-    __loop_break_645: __attribute__((unused));
+    __loop_break_646: __attribute__((unused));
 #line 41 "src/main.vl"
     out[(len * 2)] = ((uint8_t)(0));
 #line 42 "src/main.vl"
@@ -60006,9 +60324,9 @@ size_t hex_to_bytes(const char* hex_str, uint8_t* out_bytes, size_t max_len) {
         out_bytes[i] = ((uint8_t)(((hi << 4) | lo)));
 #line 63 "src/main.vl"
         i += 1;
-        __loop_cont_646: __attribute__((unused));
+        __loop_cont_647: __attribute__((unused));
     }
-    __loop_break_646: __attribute__((unused));
+    __loop_break_647: __attribute__((unused));
 #line 65 "src/main.vl"
     return limit;
 }
@@ -60216,18 +60534,18 @@ void sha256_transform(Sha256State* s, uint8_t* block) {
         w[t] = ((((b0 << 24) | (b1 << 16)) | (b2 << 8)) | b3);
 #line 84 "src/main.vl"
         t += 1;
-        __loop_cont_647: __attribute__((unused));
+        __loop_cont_648: __attribute__((unused));
     }
-    __loop_break_647: __attribute__((unused));
+    __loop_break_648: __attribute__((unused));
 #line 87 "src/main.vl"
     for (int32_t it = 0; (velo_cmp_lt_u_s(t, 64)); it++) {
 #line 88 "src/main.vl"
         w[t] = (((sha_sig1(w[(t - 2)]) + w[(t - 7)]) + sha_sig0(w[(t - 15)])) + w[(t - 16)]);
 #line 89 "src/main.vl"
         t += 1;
-        __loop_cont_648: __attribute__((unused));
+        __loop_cont_649: __attribute__((unused));
     }
-    __loop_break_648: __attribute__((unused));
+    __loop_break_649: __attribute__((unused));
 #line 92 "src/main.vl"
     uint32_t a = s->h0;
 #line 92 "src/main.vl"
@@ -60270,9 +60588,9 @@ void sha256_transform(Sha256State* s, uint8_t* block) {
         a = (t1 + t2);
 #line 107 "src/main.vl"
         i += 1;
-        __loop_cont_649: __attribute__((unused));
+        __loop_cont_650: __attribute__((unused));
     }
-    __loop_break_649: __attribute__((unused));
+    __loop_break_650: __attribute__((unused));
 #line 110 "src/main.vl"
     s->h0 = (s->h0 + a);
 #line 110 "src/main.vl"
@@ -60353,9 +60671,9 @@ void sha256_update(Sha256State* s, uint8_t* data, size_t len) {
         }
 #line 147 "src/main.vl"
         i += 1;
-        __loop_cont_650: __attribute__((unused));
+        __loop_cont_651: __attribute__((unused));
     }
-    __loop_break_650: __attribute__((unused));
+    __loop_break_651: __attribute__((unused));
 }
 
 #line 152 "src/main.vl"
@@ -60395,9 +60713,9 @@ void sha256_final(Sha256State* s, uint8_t* out_digest) {
             s->buf[s->buf_len] = ((uint8_t)(0));
 #line 171 "src/main.vl"
             s->buf_len += 1;
-            __loop_cont_651: __attribute__((unused));
+            __loop_cont_652: __attribute__((unused));
         }
-        __loop_break_651: __attribute__((unused));
+        __loop_break_652: __attribute__((unused));
 #line 173 "src/main.vl"
         sha256_transform(s, s->buf);
 #line 174 "src/main.vl"
@@ -60409,9 +60727,9 @@ void sha256_final(Sha256State* s, uint8_t* out_digest) {
         s->buf[s->buf_len] = ((uint8_t)(0));
 #line 179 "src/main.vl"
         s->buf_len += 1;
-        __loop_cont_652: __attribute__((unused));
+        __loop_cont_653: __attribute__((unused));
     }
-    __loop_break_652: __attribute__((unused));
+    __loop_break_653: __attribute__((unused));
 #line 183 "src/main.vl"
     uint64_t total_bits = (s->total_bytes * ((uint64_t)(8)));
 #line 184 "src/main.vl"
@@ -60486,9 +60804,9 @@ void sha256_final(Sha256State* s, uint8_t* out_digest) {
         out_digest[((k * 4) + 3)] = ((uint8_t)((h_val & ((uint32_t)(0xFF)))));
 #line 212 "src/main.vl"
         k += 1;
-        __loop_cont_653: __attribute__((unused));
+        __loop_cont_654: __attribute__((unused));
     }
-    __loop_break_653: __attribute__((unused));
+    __loop_break_654: __attribute__((unused));
 #line 215 "src/main.vl"
     if ((s->buf != NULL)) {
 #line 216 "src/main.vl"
@@ -60580,16 +60898,16 @@ void crc32_ensure_table(void) {
             }
 #line 21 "src/main.vl"
             j += 1;
-            __loop_cont_655: __attribute__((unused));
+            __loop_cont_656: __attribute__((unused));
         }
-        __loop_break_655: __attribute__((unused));
+        __loop_break_656: __attribute__((unused));
 #line 23 "src/main.vl"
         g_crc32_table[i] = c;
 #line 24 "src/main.vl"
         i += 1;
-        __loop_cont_654: __attribute__((unused));
+        __loop_cont_655: __attribute__((unused));
     }
-    __loop_break_654: __attribute__((unused));
+    __loop_break_655: __attribute__((unused));
 }
 
 #line 29 "src/main.vl"
@@ -60619,9 +60937,9 @@ uint32_t crc32_update(uint32_t crc, uint8_t* data, size_t len) {
         c = (g_crc32_table[idx] ^ (c >> ((uint32_t)(8))));
 #line 42 "src/main.vl"
         i += 1;
-        __loop_cont_656: __attribute__((unused));
+        __loop_cont_657: __attribute__((unused));
     }
-    __loop_break_656: __attribute__((unused));
+    __loop_break_657: __attribute__((unused));
 #line 44 "src/main.vl"
     return c;
 }
@@ -60977,25 +61295,25 @@ void sha512_transform(Sha512State* s, uint8_t* block) {
             word = ((word << ((uint64_t)(8))) | ((uint64_t)(block[((t * 8) + b)])));
 #line 89 "src/main.vl"
             b += 1;
-            __loop_cont_658: __attribute__((unused));
+            __loop_cont_659: __attribute__((unused));
         }
-        __loop_break_658: __attribute__((unused));
+        __loop_break_659: __attribute__((unused));
 #line 91 "src/main.vl"
         w[t] = word;
 #line 92 "src/main.vl"
         t += 1;
-        __loop_cont_657: __attribute__((unused));
+        __loop_cont_658: __attribute__((unused));
     }
-    __loop_break_657: __attribute__((unused));
+    __loop_break_658: __attribute__((unused));
 #line 95 "src/main.vl"
     for (int32_t it = 0; (velo_cmp_lt_u_s(t, 80)); it++) {
 #line 96 "src/main.vl"
         w[t] = (((sha512_sig1(w[(t - 2)]) + w[(t - 7)]) + sha512_sig0(w[(t - 15)])) + w[(t - 16)]);
 #line 97 "src/main.vl"
         t += 1;
-        __loop_cont_659: __attribute__((unused));
+        __loop_cont_660: __attribute__((unused));
     }
-    __loop_break_659: __attribute__((unused));
+    __loop_break_660: __attribute__((unused));
 #line 100 "src/main.vl"
     uint64_t a = s->h0;
 #line 100 "src/main.vl"
@@ -61038,9 +61356,9 @@ void sha512_transform(Sha512State* s, uint8_t* block) {
         a = (t1 + t2);
 #line 115 "src/main.vl"
         i += 1;
-        __loop_cont_660: __attribute__((unused));
+        __loop_cont_661: __attribute__((unused));
     }
-    __loop_break_660: __attribute__((unused));
+    __loop_break_661: __attribute__((unused));
 #line 118 "src/main.vl"
     s->h0 = (s->h0 + a);
 #line 118 "src/main.vl"
@@ -61123,9 +61441,9 @@ void sha512_update(Sha512State* s, uint8_t* data, size_t len) {
         }
 #line 156 "src/main.vl"
         i += 1;
-        __loop_cont_661: __attribute__((unused));
+        __loop_cont_662: __attribute__((unused));
     }
-    __loop_break_661: __attribute__((unused));
+    __loop_break_662: __attribute__((unused));
 }
 
 #line 161 "src/main.vl"
@@ -61165,9 +61483,9 @@ void sha512_final(Sha512State* s, uint8_t* out_digest) {
             s->buf[s->buf_len] = ((uint8_t)(0));
 #line 180 "src/main.vl"
             s->buf_len += 1;
-            __loop_cont_662: __attribute__((unused));
+            __loop_cont_663: __attribute__((unused));
         }
-        __loop_break_662: __attribute__((unused));
+        __loop_break_663: __attribute__((unused));
 #line 182 "src/main.vl"
         sha512_transform(s, s->buf);
 #line 183 "src/main.vl"
@@ -61179,9 +61497,9 @@ void sha512_final(Sha512State* s, uint8_t* out_digest) {
         s->buf[s->buf_len] = ((uint8_t)(0));
 #line 188 "src/main.vl"
         s->buf_len += 1;
-        __loop_cont_663: __attribute__((unused));
+        __loop_cont_664: __attribute__((unused));
     }
-    __loop_break_663: __attribute__((unused));
+    __loop_break_664: __attribute__((unused));
 #line 192 "src/main.vl"
     uint64_t total_bits_hi = (s->total_bytes >> ((uint64_t)(61)));
 #line 193 "src/main.vl"
@@ -61198,9 +61516,9 @@ void sha512_final(Sha512State* s, uint8_t* out_digest) {
         s->buf[(120 + bi)] = ((uint8_t)(((total_bits_lo >> shift) & ((uint64_t)(0xFF)))));
 #line 199 "src/main.vl"
         bi += 1;
-        __loop_cont_664: __attribute__((unused));
+        __loop_cont_665: __attribute__((unused));
     }
-    __loop_break_664: __attribute__((unused));
+    __loop_break_665: __attribute__((unused));
 #line 202 "src/main.vl"
     sha512_transform(s, s->buf);
 #line 205 "src/main.vl"
@@ -61257,14 +61575,14 @@ void sha512_final(Sha512State* s, uint8_t* out_digest) {
             out_digest[((k * 8) + b)] = ((uint8_t)(((h_val >> shift) & ((uint64_t)(0xFF)))));
 #line 221 "src/main.vl"
             b += 1;
-            __loop_cont_666: __attribute__((unused));
+            __loop_cont_667: __attribute__((unused));
         }
-        __loop_break_666: __attribute__((unused));
+        __loop_break_667: __attribute__((unused));
 #line 223 "src/main.vl"
         k += 1;
-        __loop_cont_665: __attribute__((unused));
+        __loop_cont_666: __attribute__((unused));
     }
-    __loop_break_665: __attribute__((unused));
+    __loop_break_666: __attribute__((unused));
 #line 226 "src/main.vl"
     if ((s->buf != NULL)) {
 #line 227 "src/main.vl"
@@ -61359,9 +61677,9 @@ void hmac_sha512(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len, u
                 k[ki] = key[ki];
 #line 287 "src/main.vl"
                 ki += 1;
-                __loop_cont_667: __attribute__((unused));
+                __loop_cont_668: __attribute__((unused));
             }
-            __loop_break_667: __attribute__((unused));
+            __loop_break_668: __attribute__((unused));
         }
     }
 #line 293 "src/main.vl"
@@ -61378,9 +61696,9 @@ void hmac_sha512(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len, u
         opad[j] = (k[j] ^ ((uint8_t)(0x5C)));
 #line 299 "src/main.vl"
         j += 1;
-        __loop_cont_668: __attribute__((unused));
+        __loop_cont_669: __attribute__((unused));
     }
-    __loop_break_668: __attribute__((unused));
+    __loop_break_669: __attribute__((unused));
 #line 302 "src/main.vl"
     Sha512State inner_state;
 #line 303 "src/main.vl"
@@ -61603,9 +61921,9 @@ void hmac_sha256(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len, u
                 k[ki] = key[ki];
 #line 23 "src/main.vl"
                 ki += 1;
-                __loop_cont_669: __attribute__((unused));
+                __loop_cont_670: __attribute__((unused));
             }
-            __loop_break_669: __attribute__((unused));
+            __loop_break_670: __attribute__((unused));
         }
     }
 #line 29 "src/main.vl"
@@ -61622,9 +61940,9 @@ void hmac_sha256(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len, u
         opad[j] = (k[j] ^ ((uint8_t)(0x5C)));
 #line 35 "src/main.vl"
         j += 1;
-        __loop_cont_670: __attribute__((unused));
+        __loop_cont_671: __attribute__((unused));
     }
-    __loop_break_670: __attribute__((unused));
+    __loop_break_671: __attribute__((unused));
 #line 38 "src/main.vl"
     Sha256State inner_state;
 #line 39 "src/main.vl"
@@ -61864,9 +62182,9 @@ void crypto_unsafe_fallback_bytes(uint8_t* buf, size_t len) {
         buf[i] = ((uint8_t)((r & ((uint64_t)(0xFF)))));
 #line 50 "src/main.vl"
         i += 1;
-        __loop_cont_671: __attribute__((unused));
+        __loop_cont_672: __attribute__((unused));
     }
-    __loop_break_671: __attribute__((unused));
+    __loop_break_672: __attribute__((unused));
 }
 
 #line 57 "src/main.vl"
@@ -62025,9 +62343,9 @@ uint64_t crypto_random_range(uint64_t min, uint64_t max) {
     for (int32_t it = 0; ((r >= limit)); it++) {
 #line 150 "src/main.vl"
         r = crypto_random_u64();
-        __loop_cont_672: __attribute__((unused));
+        __loop_cont_673: __attribute__((unused));
     }
-    __loop_break_672: __attribute__((unused));
+    __loop_break_673: __attribute__((unused));
 #line 152 "src/main.vl"
     return (min + (r % velo_div_guard(range)));
 }
@@ -62156,9 +62474,9 @@ void chacha20_block(uint8_t* key, uint32_t counter, uint8_t* nonce, uint8_t* out
         state[(4 + i)] = chacha20_load32_le(key, (i * 4));
 #line 61 "src/main.vl"
         i += 1;
-        __loop_cont_673: __attribute__((unused));
+        __loop_cont_674: __attribute__((unused));
     }
-    __loop_break_673: __attribute__((unused));
+    __loop_break_674: __attribute__((unused));
 #line 62 "src/main.vl"
     state[12] = counter;
 #line 63 "src/main.vl"
@@ -62175,9 +62493,9 @@ void chacha20_block(uint8_t* key, uint32_t counter, uint8_t* nonce, uint8_t* out
         w[i] = state[i];
 #line 68 "src/main.vl"
         i += 1;
-        __loop_cont_674: __attribute__((unused));
+        __loop_cont_675: __attribute__((unused));
     }
-    __loop_break_674: __attribute__((unused));
+    __loop_break_675: __attribute__((unused));
 #line 70 "src/main.vl"
     size_t r = 0;
 #line 71 "src/main.vl"
@@ -62200,9 +62518,9 @@ void chacha20_block(uint8_t* key, uint32_t counter, uint8_t* nonce, uint8_t* out
         chacha20_qr(w, 3, 4, 9, 14);
 #line 76 "src/main.vl"
         r += 1;
-        __loop_cont_675: __attribute__((unused));
+        __loop_cont_676: __attribute__((unused));
     }
-    __loop_break_675: __attribute__((unused));
+    __loop_break_676: __attribute__((unused));
 #line 79 "src/main.vl"
     i = 0;
 #line 80 "src/main.vl"
@@ -62211,9 +62529,9 @@ void chacha20_block(uint8_t* key, uint32_t counter, uint8_t* nonce, uint8_t* out
         chacha20_store32_le(out_block, (i * 4), (state[i] + w[i]));
 #line 80 "src/main.vl"
         i += 1;
-        __loop_cont_676: __attribute__((unused));
+        __loop_cont_677: __attribute__((unused));
     }
-    __loop_break_676: __attribute__((unused));
+    __loop_break_677: __attribute__((unused));
 #line 82 "src/main.vl"
     crypto_zero(((uint8_t*)(state)), (16 * 4));
 #line 82 "src/main.vl"
@@ -62258,14 +62576,14 @@ void chacha20_crypt(uint8_t* key, uint32_t counter, uint8_t* nonce, uint8_t* in_
             out_data[(offset + i)] = (in_data[(offset + i)] ^ block[i]);
 #line 99 "src/main.vl"
             i += 1;
-            __loop_cont_678: __attribute__((unused));
+            __loop_cont_679: __attribute__((unused));
         }
-        __loop_break_678: __attribute__((unused));
+        __loop_break_679: __attribute__((unused));
 #line 100 "src/main.vl"
         offset += chunk_len;
-        __loop_cont_677: __attribute__((unused));
+        __loop_cont_678: __attribute__((unused));
     }
-    __loop_break_677: __attribute__((unused));
+    __loop_break_678: __attribute__((unused));
 #line 103 "src/main.vl"
     crypto_zero(block, 64);
 #line 104 "src/main.vl"
@@ -62325,9 +62643,9 @@ void poly1305_mac(uint8_t* key, uint8_t* msg, size_t msg_len, uint8_t* out_tag) 
             block_buf[bi] = msg[(idx + bi)];
 #line 131 "src/main.vl"
             bi += 1;
-            __loop_cont_680: __attribute__((unused));
+            __loop_cont_681: __attribute__((unused));
         }
-        __loop_break_680: __attribute__((unused));
+        __loop_break_681: __attribute__((unused));
 #line 132 "src/main.vl"
         block_buf[blen] = ((uint8_t)(1));
 #line 134 "src/main.vl"
@@ -62408,9 +62726,9 @@ void poly1305_mac(uint8_t* key, uint8_t* msg, size_t msg_len, uint8_t* out_tag) 
         h1 = (h1 + c);
 #line 158 "src/main.vl"
         idx += 16;
-        __loop_cont_679: __attribute__((unused));
+        __loop_cont_680: __attribute__((unused));
     }
-    __loop_break_679: __attribute__((unused));
+    __loop_break_680: __attribute__((unused));
 #line 160 "src/main.vl"
     crypto_zero(block_buf, 17);
 #line 160 "src/main.vl"
@@ -62565,9 +62883,9 @@ uint8_t* chacha20poly1305_build_mac_data(uint8_t* aad, size_t aad_len, uint8_t* 
             buf[(offset + i)] = aad[i];
 #line 213 "src/main.vl"
             i += 1;
-            __loop_cont_681: __attribute__((unused));
+            __loop_cont_682: __attribute__((unused));
         }
-        __loop_break_681: __attribute__((unused));
+        __loop_break_682: __attribute__((unused));
 #line 214 "src/main.vl"
         offset += aad_len;
     }
@@ -62583,9 +62901,9 @@ uint8_t* chacha20poly1305_build_mac_data(uint8_t* aad, size_t aad_len, uint8_t* 
             buf[(offset + i)] = ct[i];
 #line 220 "src/main.vl"
             i += 1;
-            __loop_cont_682: __attribute__((unused));
+            __loop_cont_683: __attribute__((unused));
         }
-        __loop_break_682: __attribute__((unused));
+        __loop_break_683: __attribute__((unused));
 #line 221 "src/main.vl"
         offset += ct_len;
     }
@@ -62601,9 +62919,9 @@ uint8_t* chacha20poly1305_build_mac_data(uint8_t* aad, size_t aad_len, uint8_t* 
         buf[(offset + b)] = ((uint8_t)(((aad_u64 >> ((uint64_t)((b * 8)))) & 0xff)));
 #line 227 "src/main.vl"
         b += 1;
-        __loop_cont_683: __attribute__((unused));
+        __loop_cont_684: __attribute__((unused));
     }
-    __loop_break_683: __attribute__((unused));
+    __loop_break_684: __attribute__((unused));
 #line 228 "src/main.vl"
     offset += 8;
 #line 230 "src/main.vl"
@@ -62616,9 +62934,9 @@ uint8_t* chacha20poly1305_build_mac_data(uint8_t* aad, size_t aad_len, uint8_t* 
         buf[(offset + b)] = ((uint8_t)(((ct_u64 >> ((uint64_t)((b * 8)))) & 0xff)));
 #line 232 "src/main.vl"
         b += 1;
-        __loop_cont_684: __attribute__((unused));
+        __loop_cont_685: __attribute__((unused));
     }
-    __loop_break_684: __attribute__((unused));
+    __loop_break_685: __attribute__((unused));
 #line 234 "src/main.vl"
     return buf;
 }
@@ -62799,9 +63117,9 @@ ChaCha20Poly1305Handle* chacha20poly1305_handle_new(uint8_t* key, size_t key_len
         h->key[i] = key[i];
 #line 328 "src/main.vl"
         i += 1;
-        __loop_cont_685: __attribute__((unused));
+        __loop_cont_686: __attribute__((unused));
     }
-    __loop_break_685: __attribute__((unused));
+    __loop_break_686: __attribute__((unused));
 #line 330 "src/main.vl"
     if ((nonce != NULL)) {
 #line 331 "src/main.vl"
@@ -62827,9 +63145,9 @@ ChaCha20Poly1305Handle* chacha20poly1305_handle_new(uint8_t* key, size_t key_len
             h->nonce[i] = nonce[i];
 #line 337 "src/main.vl"
             i += 1;
-            __loop_cont_686: __attribute__((unused));
+            __loop_cont_687: __attribute__((unused));
         }
-        __loop_break_686: __attribute__((unused));
+        __loop_break_687: __attribute__((unused));
     } else {
 #line 339 "src/main.vl"
         _Velo_Or_bool_string res = crypto_random_bytes(h->nonce, 12);
@@ -63011,9 +63329,9 @@ bool hkdf_sha256_expand(uint8_t* prk, size_t prk_len, uint8_t* info, size_t info
                 chunk_pos += 1;
 #line 40 "src/main.vl"
                 i += 1;
-                __loop_cont_688: __attribute__((unused));
+                __loop_cont_689: __attribute__((unused));
             }
-            __loop_break_688: __attribute__((unused));
+            __loop_break_689: __attribute__((unused));
         }
 #line 42 "src/main.vl"
         if (((info != NULL) && velo_cmp_gt_u_s(info_len, 0))) {
@@ -63027,9 +63345,9 @@ bool hkdf_sha256_expand(uint8_t* prk, size_t prk_len, uint8_t* info, size_t info
                 chunk_pos += 1;
 #line 44 "src/main.vl"
                 i += 1;
-                __loop_cont_689: __attribute__((unused));
+                __loop_cont_690: __attribute__((unused));
             }
-            __loop_break_689: __attribute__((unused));
+            __loop_break_690: __attribute__((unused));
         }
 #line 46 "src/main.vl"
         chunk_buf[chunk_pos] = ((uint8_t)(round));
@@ -63054,16 +63372,16 @@ bool hkdf_sha256_expand(uint8_t* prk, size_t prk_len, uint8_t* info, size_t info
             out_okm[(okm_pos + i)] = t[i];
 #line 59 "src/main.vl"
             i += 1;
-            __loop_cont_690: __attribute__((unused));
+            __loop_cont_691: __attribute__((unused));
         }
-        __loop_break_690: __attribute__((unused));
+        __loop_break_691: __attribute__((unused));
 #line 61 "src/main.vl"
         okm_pos += copy_len;
 #line 62 "src/main.vl"
         round += 1;
-        __loop_cont_687: __attribute__((unused));
+        __loop_cont_688: __attribute__((unused));
     }
-    __loop_break_687: __attribute__((unused));
+    __loop_break_688: __attribute__((unused));
 #line 65 "src/main.vl"
     crypto_zero(t, 32);
 #line 66 "src/main.vl"
@@ -63137,9 +63455,9 @@ bool tls13_hkdf_expand_label(uint8_t* secret, const char* label, uint8_t* contex
         pos += 1;
 #line 106 "src/main.vl"
         i += 1;
-        __loop_cont_691: __attribute__((unused));
+        __loop_cont_692: __attribute__((unused));
     }
-    __loop_break_691: __attribute__((unused));
+    __loop_break_692: __attribute__((unused));
 #line 107 "src/main.vl"
     i = 0;
 #line 108 "src/main.vl"
@@ -63150,9 +63468,9 @@ bool tls13_hkdf_expand_label(uint8_t* secret, const char* label, uint8_t* contex
         pos += 1;
 #line 108 "src/main.vl"
         i += 1;
-        __loop_cont_692: __attribute__((unused));
+        __loop_cont_693: __attribute__((unused));
     }
-    __loop_break_692: __attribute__((unused));
+    __loop_break_693: __attribute__((unused));
 #line 111 "src/main.vl"
     hkdf_label[pos] = ((uint8_t)(context_len));
 #line 112 "src/main.vl"
@@ -63169,9 +63487,9 @@ bool tls13_hkdf_expand_label(uint8_t* secret, const char* label, uint8_t* contex
             pos += 1;
 #line 115 "src/main.vl"
             i += 1;
-            __loop_cont_693: __attribute__((unused));
+            __loop_cont_694: __attribute__((unused));
         }
-        __loop_break_693: __attribute__((unused));
+        __loop_break_694: __attribute__((unused));
     }
 #line 118 "src/main.vl"
     bool ok = hkdf_sha256_expand(secret, 32, hkdf_label, hkdf_label_len, out_key, ((size_t)(length)));
@@ -63211,9 +63529,9 @@ void x25519_car(int64_t* o) {
         o[i] -= (c << 16);
 #line 28 "src/main.vl"
         i += 1;
-        __loop_cont_694: __attribute__((unused));
+        __loop_cont_695: __attribute__((unused));
     }
-    __loop_break_694: __attribute__((unused));
+    __loop_break_695: __attribute__((unused));
 }
 
 #line 32 "src/main.vl"
@@ -63232,9 +63550,9 @@ void x25519_sel(int64_t* p, int64_t* q, int32_t b) {
         q[i] ^= t;
 #line 39 "src/main.vl"
         i += 1;
-        __loop_cont_695: __attribute__((unused));
+        __loop_cont_696: __attribute__((unused));
     }
-    __loop_break_695: __attribute__((unused));
+    __loop_break_696: __attribute__((unused));
 }
 
 #line 43 "src/main.vl"
@@ -63251,9 +63569,9 @@ void x25519_pack(uint8_t* out_bytes, int64_t* n) {
         t[i] = n[i];
 #line 47 "src/main.vl"
         i += 1;
-        __loop_cont_696: __attribute__((unused));
+        __loop_cont_697: __attribute__((unused));
     }
-    __loop_break_696: __attribute__((unused));
+    __loop_break_697: __attribute__((unused));
 #line 49 "src/main.vl"
     x25519_car(t);
 #line 50 "src/main.vl"
@@ -63276,9 +63594,9 @@ void x25519_pack(uint8_t* out_bytes, int64_t* n) {
             m[(i - 1)] &= ((int64_t)(0xffff));
 #line 60 "src/main.vl"
             i += 1;
-            __loop_cont_698: __attribute__((unused));
+            __loop_cont_699: __attribute__((unused));
         }
-        __loop_break_698: __attribute__((unused));
+        __loop_break_699: __attribute__((unused));
 #line 62 "src/main.vl"
         m[15] = ((t[15] - ((int64_t)(0x7fff))) - ((m[14] >> 16) & ((int64_t)(1))));
 #line 63 "src/main.vl"
@@ -63289,9 +63607,9 @@ void x25519_pack(uint8_t* out_bytes, int64_t* n) {
         x25519_sel(t, m, (1 - b));
 #line 66 "src/main.vl"
         j += 1;
-        __loop_cont_697: __attribute__((unused));
+        __loop_cont_698: __attribute__((unused));
     }
-    __loop_break_697: __attribute__((unused));
+    __loop_break_698: __attribute__((unused));
 #line 69 "src/main.vl"
     i = 0;
 #line 70 "src/main.vl"
@@ -63302,9 +63620,9 @@ void x25519_pack(uint8_t* out_bytes, int64_t* n) {
         out_bytes[((2 * i) + 1)] = ((uint8_t)(((t[i] >> 8) & ((int64_t)(0xff)))));
 #line 73 "src/main.vl"
         i += 1;
-        __loop_cont_699: __attribute__((unused));
+        __loop_cont_700: __attribute__((unused));
     }
-    __loop_break_699: __attribute__((unused));
+    __loop_break_700: __attribute__((unused));
 #line 76 "src/main.vl"
     crypto_zero(((uint8_t*)(t)), (16 * 8));
 #line 77 "src/main.vl"
@@ -63329,9 +63647,9 @@ void x25519_unpack(int64_t* o, uint8_t* in_bytes) {
         o[i] = (lo | hi);
 #line 88 "src/main.vl"
         i += 1;
-        __loop_cont_700: __attribute__((unused));
+        __loop_cont_701: __attribute__((unused));
     }
-    __loop_break_700: __attribute__((unused));
+    __loop_break_701: __attribute__((unused));
 #line 90 "src/main.vl"
     o[15] &= ((int64_t)(0x7fff));
 }
@@ -63346,9 +63664,9 @@ void x25519_add(int64_t* o, int64_t* a, int64_t* b) {
         o[i] = (a[i] + b[i]);
 #line 95 "src/main.vl"
         i += 1;
-        __loop_cont_701: __attribute__((unused));
+        __loop_cont_702: __attribute__((unused));
     }
-    __loop_break_701: __attribute__((unused));
+    __loop_break_702: __attribute__((unused));
 }
 
 #line 98 "src/main.vl"
@@ -63361,9 +63679,9 @@ void x25519_sub(int64_t* o, int64_t* a, int64_t* b) {
         o[i] = (a[i] - b[i]);
 #line 100 "src/main.vl"
         i += 1;
-        __loop_cont_702: __attribute__((unused));
+        __loop_cont_703: __attribute__((unused));
     }
-    __loop_break_702: __attribute__((unused));
+    __loop_break_703: __attribute__((unused));
 }
 
 #line 103 "src/main.vl"
@@ -63384,14 +63702,14 @@ void x25519_mul(int64_t* o, int64_t* a, int64_t* b) {
             t[(i + j)] += (a[i] * b[j]);
 #line 112 "src/main.vl"
             j += 1;
-            __loop_cont_704: __attribute__((unused));
+            __loop_cont_705: __attribute__((unused));
         }
-        __loop_break_704: __attribute__((unused));
+        __loop_break_705: __attribute__((unused));
 #line 114 "src/main.vl"
         i += 1;
-        __loop_cont_703: __attribute__((unused));
+        __loop_cont_704: __attribute__((unused));
     }
-    __loop_break_703: __attribute__((unused));
+    __loop_break_704: __attribute__((unused));
 #line 117 "src/main.vl"
     i = 0;
 #line 118 "src/main.vl"
@@ -63400,9 +63718,9 @@ void x25519_mul(int64_t* o, int64_t* a, int64_t* b) {
         t[i] += (((int64_t)(38)) * t[(i + 16)]);
 #line 120 "src/main.vl"
         i += 1;
-        __loop_cont_705: __attribute__((unused));
+        __loop_cont_706: __attribute__((unused));
     }
-    __loop_break_705: __attribute__((unused));
+    __loop_break_706: __attribute__((unused));
 #line 123 "src/main.vl"
     i = 0;
 #line 124 "src/main.vl"
@@ -63411,9 +63729,9 @@ void x25519_mul(int64_t* o, int64_t* a, int64_t* b) {
         o[i] = t[i];
 #line 124 "src/main.vl"
         i += 1;
-        __loop_cont_706: __attribute__((unused));
+        __loop_cont_707: __attribute__((unused));
     }
-    __loop_break_706: __attribute__((unused));
+    __loop_break_707: __attribute__((unused));
 #line 126 "src/main.vl"
     x25519_car(o);
 #line 127 "src/main.vl"
@@ -63442,9 +63760,9 @@ void x25519_inv(int64_t* o, int64_t* inp) {
         c[k] = inp[k];
 #line 140 "src/main.vl"
         k += 1;
-        __loop_cont_707: __attribute__((unused));
+        __loop_cont_708: __attribute__((unused));
     }
-    __loop_break_707: __attribute__((unused));
+    __loop_break_708: __attribute__((unused));
 #line 142 "src/main.vl"
     int32_t a = 253;
 #line 143 "src/main.vl"
@@ -63458,9 +63776,9 @@ void x25519_inv(int64_t* o, int64_t* inp) {
         }
 #line 148 "src/main.vl"
         a -= 1;
-        __loop_cont_708: __attribute__((unused));
+        __loop_cont_709: __attribute__((unused));
     }
-    __loop_break_708: __attribute__((unused));
+    __loop_break_709: __attribute__((unused));
 #line 151 "src/main.vl"
     k = 0;
 #line 152 "src/main.vl"
@@ -63469,9 +63787,9 @@ void x25519_inv(int64_t* o, int64_t* inp) {
         o[k] = c[k];
 #line 152 "src/main.vl"
         k += 1;
-        __loop_cont_709: __attribute__((unused));
+        __loop_cont_710: __attribute__((unused));
     }
-    __loop_break_709: __attribute__((unused));
+    __loop_break_710: __attribute__((unused));
 #line 154 "src/main.vl"
     crypto_zero(((uint8_t*)(c)), (16 * 8));
 #line 155 "src/main.vl"
@@ -63490,9 +63808,9 @@ void x25519_pow2523(int64_t* o, int64_t* inp) {
         c[k] = inp[k];
 #line 161 "src/main.vl"
         k += 1;
-        __loop_cont_710: __attribute__((unused));
+        __loop_cont_711: __attribute__((unused));
     }
-    __loop_break_710: __attribute__((unused));
+    __loop_break_711: __attribute__((unused));
 #line 163 "src/main.vl"
     int32_t a = 250;
 #line 164 "src/main.vl"
@@ -63506,9 +63824,9 @@ void x25519_pow2523(int64_t* o, int64_t* inp) {
         }
 #line 169 "src/main.vl"
         a -= 1;
-        __loop_cont_711: __attribute__((unused));
+        __loop_cont_712: __attribute__((unused));
     }
-    __loop_break_711: __attribute__((unused));
+    __loop_break_712: __attribute__((unused));
 #line 172 "src/main.vl"
     k = 0;
 #line 173 "src/main.vl"
@@ -63517,9 +63835,9 @@ void x25519_pow2523(int64_t* o, int64_t* inp) {
         o[k] = c[k];
 #line 173 "src/main.vl"
         k += 1;
-        __loop_cont_712: __attribute__((unused));
+        __loop_cont_713: __attribute__((unused));
     }
-    __loop_break_712: __attribute__((unused));
+    __loop_break_713: __attribute__((unused));
 #line 175 "src/main.vl"
     crypto_zero(((uint8_t*)(c)), (16 * 8));
 #line 176 "src/main.vl"
@@ -63583,9 +63901,9 @@ bool x25519_scalarmult(uint8_t* scalar, uint8_t* point, uint8_t* out_shared) {
         z[i] = scalar[i];
 #line 210 "src/main.vl"
         i += 1;
-        __loop_cont_713: __attribute__((unused));
+        __loop_cont_714: __attribute__((unused));
     }
-    __loop_break_713: __attribute__((unused));
+    __loop_break_714: __attribute__((unused));
 #line 211 "src/main.vl"
     z[0] &= ((uint8_t)(248));
 #line 212 "src/main.vl"
@@ -63610,9 +63928,9 @@ bool x25519_scalarmult(uint8_t* scalar, uint8_t* point, uint8_t* out_shared) {
         b[i] = x[i];
 #line 218 "src/main.vl"
         i += 1;
-        __loop_cont_714: __attribute__((unused));
+        __loop_cont_715: __attribute__((unused));
     }
-    __loop_break_714: __attribute__((unused));
+    __loop_break_715: __attribute__((unused));
 #line 219 "src/main.vl"
     int64_t* c = ((int64_t*)(heap_alloc((16 * 8))));
 #line 219 "src/main.vl"
@@ -63691,9 +64009,9 @@ bool x25519_scalarmult(uint8_t* scalar, uint8_t* point, uint8_t* out_shared) {
         x25519_sel(c, d, r);
 #line 245 "src/main.vl"
         bit_idx -= 1;
-        __loop_cont_715: __attribute__((unused));
+        __loop_cont_716: __attribute__((unused));
     }
-    __loop_break_715: __attribute__((unused));
+    __loop_break_716: __attribute__((unused));
 #line 248 "src/main.vl"
     int64_t* inv_c = ((int64_t*)(heap_alloc((16 * 8))));
 #line 249 "src/main.vl"
@@ -63714,9 +64032,9 @@ bool x25519_scalarmult(uint8_t* scalar, uint8_t* point, uint8_t* out_shared) {
         d_or |= out_shared[i];
 #line 256 "src/main.vl"
         i += 1;
-        __loop_cont_716: __attribute__((unused));
+        __loop_cont_717: __attribute__((unused));
     }
-    __loop_break_716: __attribute__((unused));
+    __loop_break_717: __attribute__((unused));
 #line 258 "src/main.vl"
     crypto_zero(z, 32);
 #line 258 "src/main.vl"
@@ -63920,9 +64238,9 @@ void ed25519_ensure_constants(void) {
         g_ed_y[i] = ((int64_t)(0x6666));
 #line 44 "src/main.vl"
         i += 1;
-        __loop_cont_717: __attribute__((unused));
+        __loop_cont_718: __attribute__((unused));
     }
-    __loop_break_717: __attribute__((unused));
+    __loop_break_718: __attribute__((unused));
 #line 46 "src/main.vl"
     g_ed_i = ((int64_t*)(heap_alloc((16 * 8))));
 #line 47 "src/main.vl"
@@ -64007,9 +64325,9 @@ void ed25519_set(int64_t* r, int64_t* a) {
         r[i] = a[i];
 #line 63 "src/main.vl"
         i += 1;
-        __loop_cont_718: __attribute__((unused));
+        __loop_cont_719: __attribute__((unused));
     }
-    __loop_break_718: __attribute__((unused));
+    __loop_break_719: __attribute__((unused));
 }
 
 #line 66 "src/main.vl"
@@ -64116,9 +64434,9 @@ void ed25519_cswap(int64_t* p, int64_t* q, int32_t b) {
         x25519_sel((p + (i * 16)), (q + (i * 16)), b);
 #line 110 "src/main.vl"
         i += 1;
-        __loop_cont_719: __attribute__((unused));
+        __loop_cont_720: __attribute__((unused));
     }
-    __loop_break_719: __attribute__((unused));
+    __loop_break_720: __attribute__((unused));
 }
 
 #line 114 "src/main.vl"
@@ -64175,9 +64493,9 @@ void ed25519_scalarmult(int64_t* p, int64_t* q, uint8_t* s) {
         ed25519_cswap(p, q, b);
 #line 143 "src/main.vl"
         i -= 1;
-        __loop_cont_720: __attribute__((unused));
+        __loop_cont_721: __attribute__((unused));
     }
-    __loop_break_720: __attribute__((unused));
+    __loop_break_721: __attribute__((unused));
 }
 
 #line 147 "src/main.vl"
@@ -64333,9 +64651,9 @@ void ed25519_reduce(uint8_t* r) {
         x[i] = ((int64_t)(r[i]));
 #line 221 "src/main.vl"
         i += 1;
-        __loop_cont_721: __attribute__((unused));
+        __loop_cont_722: __attribute__((unused));
     }
-    __loop_break_721: __attribute__((unused));
+    __loop_break_722: __attribute__((unused));
 #line 223 "src/main.vl"
     int64_t carry = 0;
 #line 224 "src/main.vl"
@@ -64358,18 +64676,18 @@ void ed25519_reduce(uint8_t* r) {
             x[j] -= (carry << 8);
 #line 233 "src/main.vl"
             j += 1;
-            __loop_cont_723: __attribute__((unused));
+            __loop_cont_724: __attribute__((unused));
         }
-        __loop_break_723: __attribute__((unused));
+        __loop_break_724: __attribute__((unused));
 #line 235 "src/main.vl"
         x[(ui - 12)] += carry;
 #line 236 "src/main.vl"
         x[ui] = ((int64_t)(0));
 #line 237 "src/main.vl"
         step_i -= 1;
-        __loop_cont_722: __attribute__((unused));
+        __loop_cont_723: __attribute__((unused));
     }
-    __loop_break_722: __attribute__((unused));
+    __loop_break_723: __attribute__((unused));
 #line 240 "src/main.vl"
     carry = ((int64_t)(0));
 #line 241 "src/main.vl"
@@ -64384,9 +64702,9 @@ void ed25519_reduce(uint8_t* r) {
         x[j] &= ((int64_t)(255));
 #line 246 "src/main.vl"
         j += 1;
-        __loop_cont_724: __attribute__((unused));
+        __loop_cont_725: __attribute__((unused));
     }
-    __loop_break_724: __attribute__((unused));
+    __loop_break_725: __attribute__((unused));
 #line 248 "src/main.vl"
     j = 0;
 #line 249 "src/main.vl"
@@ -64395,9 +64713,9 @@ void ed25519_reduce(uint8_t* r) {
         x[j] -= (carry * g_ed_l[j]);
 #line 251 "src/main.vl"
         j += 1;
-        __loop_cont_725: __attribute__((unused));
+        __loop_cont_726: __attribute__((unused));
     }
-    __loop_break_725: __attribute__((unused));
+    __loop_break_726: __attribute__((unused));
 #line 253 "src/main.vl"
     i = 0;
 #line 254 "src/main.vl"
@@ -64408,9 +64726,9 @@ void ed25519_reduce(uint8_t* r) {
         r[i] = ((uint8_t)((x[i] & ((int64_t)(255)))));
 #line 257 "src/main.vl"
         i += 1;
-        __loop_cont_726: __attribute__((unused));
+        __loop_cont_727: __attribute__((unused));
     }
-    __loop_break_726: __attribute__((unused));
+    __loop_break_727: __attribute__((unused));
 #line 259 "src/main.vl"
     heap_free(((void*)(x)));
 }
@@ -64557,9 +64875,9 @@ LockEntry* lockfile_find(LockFile* lock, const char* name) {
         }
 #line 38 "src/main.vl"
         cur = cur->next;
-        __loop_cont_727: __attribute__((unused));
+        __loop_cont_728: __attribute__((unused));
     }
-    __loop_break_727: __attribute__((unused));
+    __loop_break_728: __attribute__((unused));
 #line 40 "src/main.vl"
     return NULL;
 }
@@ -64589,9 +64907,9 @@ void lockfile_add_entry(LockFile* lock, const char* name, const char* source, co
         for (int32_t it = 0; ((cur->next != NULL)); it++) {
 #line 56 "src/main.vl"
             cur = cur->next;
-            __loop_cont_728: __attribute__((unused));
+            __loop_cont_729: __attribute__((unused));
         }
-        __loop_break_728: __attribute__((unused));
+        __loop_break_729: __attribute__((unused));
 #line 58 "src/main.vl"
         cur->next = entry;
     }
@@ -64664,9 +64982,9 @@ DependencySpec* manifest_find_dep_in_graph(const char* root_dir, PackageManifest
         }
 #line 96 "src/main.vl"
         cur = cur->next;
-        __loop_cont_729: __attribute__((unused));
+        __loop_cont_730: __attribute__((unused));
     }
-    __loop_break_729: __attribute__((unused));
+    __loop_break_730: __attribute__((unused));
 #line 98 "src/main.vl"
     return NULL;
 }
@@ -64815,9 +65133,9 @@ const char* lockfile_serialize(LockFile* lock) {
         sb_append_str((&(sb)), "\" }\n");
 #line 179 "src/main.vl"
         cur = cur->next;
-        __loop_cont_730: __attribute__((unused));
+        __loop_cont_731: __attribute__((unused));
     }
-    __loop_break_730: __attribute__((unused));
+    __loop_break_731: __attribute__((unused));
 #line 181 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -64832,9 +65150,9 @@ const char* extract_quoted_string(const char* s, size_t start_idx, size_t* out_e
     for (int32_t it = 0; (((i < slen) && velo_cmp_ne_u_s(s[i], '"'))); it++) {
 #line 188 "src/main.vl"
         i += 1;
-        __loop_cont_731: __attribute__((unused));
+        __loop_cont_732: __attribute__((unused));
     }
-    __loop_break_731: __attribute__((unused));
+    __loop_break_732: __attribute__((unused));
 #line 190 "src/main.vl"
     if ((i >= slen)) {
 #line 191 "src/main.vl"
@@ -64855,9 +65173,9 @@ const char* extract_quoted_string(const char* s, size_t start_idx, size_t* out_e
         }
 #line 198 "src/main.vl"
         i += 1;
-        __loop_cont_732: __attribute__((unused));
+        __loop_cont_733: __attribute__((unused));
     }
-    __loop_break_732: __attribute__((unused));
+    __loop_break_733: __attribute__((unused));
 #line 200 "src/main.vl"
     const char* res = copy_slice_to_string(s, q_start, (i - q_start));
 #line 201 "src/main.vl"
@@ -64892,13 +65210,13 @@ const char* extract_field_value(const char* s, const char* key) {
 #line 214 "src/main.vl"
                 match = false;
 #line 214 "src/main.vl"
-                goto __loop_break_734;
+                goto __loop_break_735;
             }
 #line 215 "src/main.vl"
             j += 1;
-            __loop_cont_734: __attribute__((unused));
+            __loop_cont_735: __attribute__((unused));
         }
-        __loop_break_734: __attribute__((unused));
+        __loop_break_735: __attribute__((unused));
 #line 217 "src/main.vl"
         if (match) {
 #line 218 "src/main.vl"
@@ -64907,9 +65225,9 @@ const char* extract_field_value(const char* s, const char* key) {
             for (int32_t it = 0; (((p < slen) && ((velo_cmp_eq_u_s(s[p], ' ') || velo_cmp_eq_u_s(s[p], '=')) || velo_cmp_eq_u_s(s[p], ':')))); it++) {
 #line 220 "src/main.vl"
                 p += 1;
-                __loop_cont_735: __attribute__((unused));
+                __loop_cont_736: __attribute__((unused));
             }
-            __loop_break_735: __attribute__((unused));
+            __loop_break_736: __attribute__((unused));
 #line 222 "src/main.vl"
             if (((p < slen) && velo_cmp_eq_u_s(s[p], '"'))) {
 #line 223 "src/main.vl"
@@ -64920,9 +65238,9 @@ const char* extract_field_value(const char* s, const char* key) {
         }
 #line 227 "src/main.vl"
         i += 1;
-        __loop_cont_733: __attribute__((unused));
+        __loop_cont_734: __attribute__((unused));
     }
-    __loop_break_733: __attribute__((unused));
+    __loop_break_734: __attribute__((unused));
 #line 229 "src/main.vl"
     return "";
 }
@@ -64948,9 +65266,9 @@ LockFile lockfile_parse(const char* source, const char* filename) {
         for (int32_t it = 0; (((line_end < slen) && velo_cmp_ne_u_s(source[line_end], '\n'))); it++) {
 #line 242 "src/main.vl"
             line_end += 1;
-            __loop_cont_737: __attribute__((unused));
+            __loop_cont_738: __attribute__((unused));
         }
-        __loop_break_737: __attribute__((unused));
+        __loop_break_738: __attribute__((unused));
 #line 244 "src/main.vl"
         const char* line = copy_slice_to_string(source, line_start, (line_end - line_start));
 #line 245 "src/main.vl"
@@ -64963,9 +65281,9 @@ LockFile lockfile_parse(const char* source, const char* filename) {
         for (int32_t it = 0; (((p < llen) && ((velo_cmp_eq_u_s(line[p], ' ') || velo_cmp_eq_u_s(line[p], '\t')) || velo_cmp_eq_u_s(line[p], '\r')))); it++) {
 #line 250 "src/main.vl"
             p += 1;
-            __loop_cont_738: __attribute__((unused));
+            __loop_cont_739: __attribute__((unused));
         }
-        __loop_break_738: __attribute__((unused));
+        __loop_break_739: __attribute__((unused));
 #line 252 "src/main.vl"
         if ((((p >= llen) || velo_cmp_eq_u_s(line[p], '#')) || ((((p + 1) < llen) && velo_cmp_eq_u_s(line[p], '/')) && velo_cmp_eq_u_s(line[(p + 1)], '/')))) {
         } else
@@ -64987,9 +65305,9 @@ LockFile lockfile_parse(const char* source, const char* filename) {
                 lockfile_add_entry((&(lock)), pkg_name, src_val, ver_val, hash_val);
             }
         }
-        __loop_cont_736: __attribute__((unused));
+        __loop_cont_737: __attribute__((unused));
     }
-    __loop_break_736: __attribute__((unused));
+    __loop_break_737: __attribute__((unused));
 #line 265 "src/main.vl"
     return lock;
 }
@@ -65093,9 +65411,9 @@ void add_manifest_deps_to_lock(const char* root_dir, PackageManifest* m, LockFil
         }
 #line 321 "src/main.vl"
         cur = cur->next;
-        __loop_cont_739: __attribute__((unused));
+        __loop_cont_740: __attribute__((unused));
     }
-    __loop_break_739: __attribute__((unused));
+    __loop_break_740: __attribute__((unused));
 }
 
 #line 325 "src/main.vl"
@@ -65150,9 +65468,9 @@ bool verify_lockfile_integrity(PackageManifest* m, const char* m_dir, LockFile* 
         }
 #line 351 "src/main.vl"
         lcur = lcur->next;
-        __loop_cont_740: __attribute__((unused));
+        __loop_cont_741: __attribute__((unused));
     }
-    __loop_break_740: __attribute__((unused));
+    __loop_break_741: __attribute__((unused));
 #line 353 "src/main.vl"
     DependencySpec* cur = m->first_dep;
 #line 354 "src/main.vl"
@@ -65168,9 +65486,9 @@ bool verify_lockfile_integrity(PackageManifest* m, const char* m_dir, LockFile* 
         }
 #line 360 "src/main.vl"
         cur = cur->next;
-        __loop_cont_741: __attribute__((unused));
+        __loop_cont_742: __attribute__((unused));
     }
-    __loop_break_741: __attribute__((unused));
+    __loop_break_742: __attribute__((unused));
 #line 362 "src/main.vl"
     return true;
 }
@@ -65421,9 +65739,9 @@ bool install_dependencies_rec(const char* root_dir, PackageManifest* m, bool ins
         }
 #line 166 "src/main.vl"
         cur = cur->next;
-        __loop_cont_742: __attribute__((unused));
+        __loop_cont_743: __attribute__((unused));
     }
-    __loop_break_742: __attribute__((unused));
+    __loop_break_743: __attribute__((unused));
 #line 168 "src/main.vl"
     return true;
 }
@@ -65588,13 +65906,13 @@ void print_dep_tree(const char* root_dir, const char* pkg_dir, PackageManifest* 
 #line 102 "src/main.vl"
                 is_cycle = true;
 #line 103 "src/main.vl"
-                goto __loop_break_744;
+                goto __loop_break_745;
             }
 #line 105 "src/main.vl"
             a += 1;
-            __loop_cont_744: __attribute__((unused));
+            __loop_cont_745: __attribute__((unused));
         }
-        __loop_break_744: __attribute__((unused));
+        __loop_break_745: __attribute__((unused));
 #line 108 "src/main.vl"
         if (is_cycle) {
 #line 109 "src/main.vl"
@@ -65638,9 +65956,9 @@ void print_dep_tree(const char* root_dir, const char* pkg_dir, PackageManifest* 
                             next_ancestors[ai] = ancestors[ai];
 #line 133 "src/main.vl"
                             ai += 1;
-                            __loop_cont_745: __attribute__((unused));
+                            __loop_cont_746: __attribute__((unused));
                         }
-                        __loop_break_745: __attribute__((unused));
+                        __loop_break_746: __attribute__((unused));
 #line 135 "src/main.vl"
                         next_ancestors[ancestor_count] = cur->name;
 #line 137 "src/main.vl"
@@ -65653,9 +65971,9 @@ void print_dep_tree(const char* root_dir, const char* pkg_dir, PackageManifest* 
         idx += 1;
 #line 144 "src/main.vl"
         cur = cur->next;
-        __loop_cont_743: __attribute__((unused));
+        __loop_cont_744: __attribute__((unused));
     }
-    __loop_break_743: __attribute__((unused));
+    __loop_break_744: __attribute__((unused));
 }
 
 #line 149 "src/main.vl"
@@ -65799,9 +66117,9 @@ int32_t pkg_verify_run(const char* manifest_path) {
         }
 #line 241 "src/main.vl"
         cur = cur->next;
-        __loop_cont_746: __attribute__((unused));
+        __loop_cont_747: __attribute__((unused));
     }
-    __loop_break_746: __attribute__((unused));
+    __loop_break_747: __attribute__((unused));
 #line 245 "src/main.vl"
     LockEntry* lcur = lock.first;
 #line 246 "src/main.vl"
@@ -65856,9 +66174,9 @@ int32_t pkg_verify_run(const char* manifest_path) {
         }
 #line 275 "src/main.vl"
         lcur = lcur->next;
-        __loop_cont_747: __attribute__((unused));
+        __loop_cont_748: __attribute__((unused));
     }
-    __loop_break_747: __attribute__((unused));
+    __loop_break_748: __attribute__((unused));
 #line 278 "src/main.vl"
     if ((drift_count > 0)) {
 #line 279 "src/main.vl"
@@ -65938,9 +66256,9 @@ int32_t pkg_publish_run(int32_t argc, const char** argv) {
         }
 #line 46 "src/main.vl"
         i += 1;
-        __loop_cont_748: __attribute__((unused));
+        __loop_cont_749: __attribute__((unused));
     }
-    __loop_break_748: __attribute__((unused));
+    __loop_break_749: __attribute__((unused));
 #line 49 "src/main.vl"
     if (velo_cmp_eq_u_s(((usize)strlen(m_path)), 0)) {
 #line 50 "src/main.vl"
@@ -66202,9 +66520,9 @@ const char* parse_pkg_args(int32_t argc, const char** argv, bool* out_insecure, 
         }
 #line 32 "src/main.vl"
         i += 1;
-        __loop_cont_749: __attribute__((unused));
+        __loop_cont_750: __attribute__((unused));
     }
-    __loop_break_749: __attribute__((unused));
+    __loop_break_750: __attribute__((unused));
 #line 34 "src/main.vl"
     if (velo_cmp_eq_u_s(((usize)strlen(m_path)), 0)) {
 #line 34 "src/main.vl"
@@ -66247,9 +66565,9 @@ void append_pkg_linker_items(StringBuilder* sb, ManifestStringItem* first, bool 
         }
 #line 55 "src/main.vl"
         cur = cur->next;
-        __loop_cont_750: __attribute__((unused));
+        __loop_cont_751: __attribute__((unused));
     }
-    __loop_break_750: __attribute__((unused));
+    __loop_break_751: __attribute__((unused));
 }
 
 #line 60 "src/main.vl"
@@ -66732,9 +67050,9 @@ int32_t handle_pkg_command(int32_t argc, const char** argv, bool unsafe_index) {
             }
 #line 309 "src/main.vl"
             i += 1;
-            __loop_cont_751: __attribute__((unused));
+            __loop_cont_752: __attribute__((unused));
         }
-        __loop_break_751: __attribute__((unused));
+        __loop_break_752: __attribute__((unused));
 #line 312 "src/main.vl"
         if (velo_cmp_eq_u_s(((usize)strlen(manifest_path)), 0)) {
 #line 313 "src/main.vl"
@@ -66911,402 +67229,404 @@ void print_usage(void) {
 #line 26 "src/main.vl"
     println_str("  velo fmt [path] [--check]          Format Velo source files canonically");
 #line 27 "src/main.vl"
-    println_str("  velo lsp                           Start Velo Language Server (LSP stdio)");
+    println_str("  velo explain <code-or-id>          Explain compiler diagnostic code");
 #line 28 "src/main.vl"
-    println_str("  velo version                       Display compiler version");
+    println_str("  velo lsp                           Start Velo Language Server (LSP stdio)");
 #line 29 "src/main.vl"
+    println_str("  velo version                       Display compiler version");
+#line 30 "src/main.vl"
     println_str("  velo help                          Display this help manual");
 }
 
-#line 33 "src/main.vl"
-int32_t handle_run_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
 #line 34 "src/main.vl"
-    if ((argc < 3)) {
+int32_t handle_run_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
 #line 35 "src/main.vl"
-        println_str("[Velo Error] 'run' requires a source file path");
-#line 36 "src/main.vl"
-        return 1;
-    }
-#line 38 "src/main.vl"
-    const char* source_file = "";
-#line 39 "src/main.vl"
-    const char* cc = "gcc";
-#line 40 "src/main.vl"
-    bool debug_mode = false;
-#line 41 "src/main.vl"
-    bool release_mode = false;
-#line 42 "src/main.vl"
-    bool unsafe_heap = false;
-#line 43 "src/main.vl"
-    const char* opt_level = "";
-#line 44 "src/main.vl"
-    StringBuilder linker_sb = create_sb(256);
-#line 45 "src/main.vl"
-    int32_t i = 2;
-#line 46 "src/main.vl"
-    for (int32_t it = 0; ((i < argc)); it++) {
-#line 47 "src/main.vl"
-        const char* arg = argv[i];
-#line 48 "src/main.vl"
-        if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
-#line 49 "src/main.vl"
-            cc = argv[(i + 1)];
-#line 50 "src/main.vl"
-            i += 1;
-        } else
-#line 51 "src/main.vl"
-        if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
-#line 52 "src/main.vl"
-            cc = copy_slice_to_string(arg, 5, (((usize)strlen(arg)) - 5));
-        } else
-#line 53 "src/main.vl"
-        if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
-#line 54 "src/main.vl"
-            debug_mode = true;
-        } else
-#line 55 "src/main.vl"
-        if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
-#line 56 "src/main.vl"
-            release_mode = true;
-        } else
-#line 57 "src/main.vl"
-        if (((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") == 0) : (arg == "--unsafe-heap"))) {
-#line 58 "src/main.vl"
-            unsafe_heap = true;
-        } else
-#line 59 "src/main.vl"
-        if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
-#line 60 "src/main.vl"
-            opt_level = argv[(i + 1)];
-#line 61 "src/main.vl"
-            i += 1;
-        } else
-#line 62 "src/main.vl"
-        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
-#line 63 "src/main.vl"
-            opt_level = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
-        } else
-#line 64 "src/main.vl"
-        if ((((arg != NULL && "-l" != NULL) ? (strcmp(arg, "-l") == 0) : (arg == "-l")) && ((i + 1) < argc))) {
-#line 65 "src/main.vl"
-            if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 65 "src/main.vl"
-                sb_append_char((&(linker_sb)), ' ');
-            }
-#line 66 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-l");
-#line 67 "src/main.vl"
-            sb_append_str((&(linker_sb)), argv[(i + 1)]);
-#line 68 "src/main.vl"
-            i += 1;
-        } else
-#line 69 "src/main.vl"
-        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'l'))) {
-#line 70 "src/main.vl"
-            if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 70 "src/main.vl"
-                sb_append_char((&(linker_sb)), ' ');
-            }
-#line 71 "src/main.vl"
-            sb_append_str((&(linker_sb)), arg);
-        } else
-#line 72 "src/main.vl"
-        if ((((arg != NULL && "-L" != NULL) ? (strcmp(arg, "-L") == 0) : (arg == "-L")) && ((i + 1) < argc))) {
-#line 73 "src/main.vl"
-            if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 73 "src/main.vl"
-                sb_append_char((&(linker_sb)), ' ');
-            }
-#line 74 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-L");
-#line 75 "src/main.vl"
-            sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
-#line 76 "src/main.vl"
-            i += 1;
-        } else
-#line 77 "src/main.vl"
-        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'L'))) {
-#line 78 "src/main.vl"
-            if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 78 "src/main.vl"
-                sb_append_char((&(linker_sb)), ' ');
-            }
-#line 79 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-L");
-#line 80 "src/main.vl"
-            const char* raw_arg = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
-#line 81 "src/main.vl"
-            sb_append_str((&(linker_sb)), quote_path(path_to_native_str(raw_arg)));
-        } else
-#line 82 "src/main.vl"
-        if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
-#line 83 "src/main.vl"
-            source_file = arg;
-        }
-#line 85 "src/main.vl"
-        i += 1;
-        __loop_cont_752: __attribute__((unused));
-    }
-    __loop_break_752: __attribute__((unused));
-#line 87 "src/main.vl"
-    if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
-#line 88 "src/main.vl"
-        println_str("[Velo Error] 'run' requires a source file path");
-#line 89 "src/main.vl"
-        return 1;
-    }
-#line 91 "src/main.vl"
-    if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
-#line 92 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
-#line 93 "src/main.vl"
-        return 1;
-    }
-#line 95 "src/main.vl"
-    if ((debug_mode && release_mode)) {
-#line 96 "src/main.vl"
-        println_str("[Velo Error] Cannot specify both --debug and --release");
-#line 97 "src/main.vl"
-        return 1;
-    }
-#line 99 "src/main.vl"
-    const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
-#line 100 "src/main.vl"
-    if (unsafe_heap) {
-#line 101 "src/main.vl"
-        StringBuilder u_sb = create_sb((((usize)strlen(opt_flags)) + 32));
-#line 102 "src/main.vl"
-        sb_append_str((&(u_sb)), opt_flags);
-#line 102 "src/main.vl"
-        sb_append_str((&(u_sb)), " -DVELO_UNSAFE_HEAP");
-#line 102 "src/main.vl"
-        opt_flags = sb_to_string((&(u_sb)));
-    }
-#line 104 "src/main.vl"
-    const char* linker_flags = sb_to_string((&(linker_sb)));
-#line 105 "src/main.vl"
-    int32_t exit_code = 0;
-#line 106 "src/main.vl"
-    {
-        size_t __zone_wm_1 = velo_zone_push();
-#line 107 "src/main.vl"
-        exit_code = run_source_file_all_opts(source_file, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety);
-        velo_zone_pop(__zone_wm_1);
-    }
-#line 109 "src/main.vl"
-    return exit_code;
-}
-
-#line 112 "src/main.vl"
-int32_t handle_run_cmd(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives) {
-#line 113 "src/main.vl"
-    return handle_run_cmd_opts(argc, argv, unsafe_index, no_line_directives, false);
-}
-
-#line 117 "src/main.vl"
-int32_t handle_build_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
-#line 118 "src/main.vl"
     if ((argc < 3)) {
-#line 119 "src/main.vl"
-        println_str("[Velo Error] 'build' requires a source file path");
-#line 120 "src/main.vl"
+#line 36 "src/main.vl"
+        println_str("[Velo Error] 'run' requires a source file path");
+#line 37 "src/main.vl"
         return 1;
     }
-#line 122 "src/main.vl"
+#line 39 "src/main.vl"
     const char* source_file = "";
-#line 123 "src/main.vl"
-    const char* output_exe = "";
-#line 124 "src/main.vl"
+#line 40 "src/main.vl"
     const char* cc = "gcc";
-#line 125 "src/main.vl"
+#line 41 "src/main.vl"
     bool debug_mode = false;
-#line 126 "src/main.vl"
+#line 42 "src/main.vl"
     bool release_mode = false;
-#line 127 "src/main.vl"
+#line 43 "src/main.vl"
     bool unsafe_heap = false;
-#line 128 "src/main.vl"
+#line 44 "src/main.vl"
     const char* opt_level = "";
-#line 129 "src/main.vl"
+#line 45 "src/main.vl"
     StringBuilder linker_sb = create_sb(256);
-#line 130 "src/main.vl"
+#line 46 "src/main.vl"
     int32_t i = 2;
-#line 131 "src/main.vl"
+#line 47 "src/main.vl"
     for (int32_t it = 0; ((i < argc)); it++) {
-#line 132 "src/main.vl"
+#line 48 "src/main.vl"
         const char* arg = argv[i];
-#line 133 "src/main.vl"
+#line 49 "src/main.vl"
         if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
-#line 134 "src/main.vl"
+#line 50 "src/main.vl"
             cc = argv[(i + 1)];
-#line 135 "src/main.vl"
+#line 51 "src/main.vl"
             i += 1;
         } else
-#line 136 "src/main.vl"
+#line 52 "src/main.vl"
         if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
-#line 137 "src/main.vl"
+#line 53 "src/main.vl"
             cc = copy_slice_to_string(arg, 5, (((usize)strlen(arg)) - 5));
         } else
-#line 138 "src/main.vl"
-        if ((((arg != NULL && "-o" != NULL) ? (strcmp(arg, "-o") == 0) : (arg == "-o")) && ((i + 1) < argc))) {
-#line 139 "src/main.vl"
-            output_exe = argv[(i + 1)];
-#line 140 "src/main.vl"
-            i += 1;
-        } else
-#line 141 "src/main.vl"
+#line 54 "src/main.vl"
         if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
-#line 142 "src/main.vl"
+#line 55 "src/main.vl"
             debug_mode = true;
         } else
-#line 143 "src/main.vl"
+#line 56 "src/main.vl"
         if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
-#line 144 "src/main.vl"
+#line 57 "src/main.vl"
             release_mode = true;
         } else
-#line 145 "src/main.vl"
+#line 58 "src/main.vl"
         if (((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") == 0) : (arg == "--unsafe-heap"))) {
-#line 146 "src/main.vl"
+#line 59 "src/main.vl"
             unsafe_heap = true;
         } else
-#line 147 "src/main.vl"
+#line 60 "src/main.vl"
         if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
-#line 148 "src/main.vl"
+#line 61 "src/main.vl"
             opt_level = argv[(i + 1)];
-#line 149 "src/main.vl"
+#line 62 "src/main.vl"
             i += 1;
         } else
-#line 150 "src/main.vl"
+#line 63 "src/main.vl"
         if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
-#line 151 "src/main.vl"
+#line 64 "src/main.vl"
             opt_level = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
         } else
-#line 152 "src/main.vl"
+#line 65 "src/main.vl"
         if ((((arg != NULL && "-l" != NULL) ? (strcmp(arg, "-l") == 0) : (arg == "-l")) && ((i + 1) < argc))) {
-#line 153 "src/main.vl"
+#line 66 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 153 "src/main.vl"
+#line 66 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 154 "src/main.vl"
+#line 67 "src/main.vl"
             sb_append_str((&(linker_sb)), "-l");
-#line 155 "src/main.vl"
+#line 68 "src/main.vl"
             sb_append_str((&(linker_sb)), argv[(i + 1)]);
-#line 156 "src/main.vl"
+#line 69 "src/main.vl"
             i += 1;
         } else
-#line 157 "src/main.vl"
+#line 70 "src/main.vl"
         if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'l'))) {
-#line 158 "src/main.vl"
+#line 71 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 158 "src/main.vl"
+#line 71 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 159 "src/main.vl"
+#line 72 "src/main.vl"
             sb_append_str((&(linker_sb)), arg);
         } else
-#line 160 "src/main.vl"
+#line 73 "src/main.vl"
         if ((((arg != NULL && "-L" != NULL) ? (strcmp(arg, "-L") == 0) : (arg == "-L")) && ((i + 1) < argc))) {
-#line 161 "src/main.vl"
+#line 74 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 161 "src/main.vl"
+#line 74 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 162 "src/main.vl"
+#line 75 "src/main.vl"
             sb_append_str((&(linker_sb)), "-L");
-#line 163 "src/main.vl"
+#line 76 "src/main.vl"
             sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
-#line 164 "src/main.vl"
+#line 77 "src/main.vl"
             i += 1;
         } else
-#line 165 "src/main.vl"
+#line 78 "src/main.vl"
         if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'L'))) {
-#line 166 "src/main.vl"
+#line 79 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 166 "src/main.vl"
+#line 79 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 167 "src/main.vl"
+#line 80 "src/main.vl"
             sb_append_str((&(linker_sb)), "-L");
-#line 168 "src/main.vl"
+#line 81 "src/main.vl"
             const char* raw_arg = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
-#line 169 "src/main.vl"
+#line 82 "src/main.vl"
             sb_append_str((&(linker_sb)), quote_path(path_to_native_str(raw_arg)));
         } else
-#line 170 "src/main.vl"
+#line 83 "src/main.vl"
         if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
-#line 171 "src/main.vl"
+#line 84 "src/main.vl"
             source_file = arg;
         }
-#line 173 "src/main.vl"
+#line 86 "src/main.vl"
         i += 1;
         __loop_cont_753: __attribute__((unused));
     }
     __loop_break_753: __attribute__((unused));
-#line 175 "src/main.vl"
+#line 88 "src/main.vl"
     if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
-#line 176 "src/main.vl"
-        println_str("[Velo Error] 'build' requires a source file path");
-#line 177 "src/main.vl"
+#line 89 "src/main.vl"
+        println_str("[Velo Error] 'run' requires a source file path");
+#line 90 "src/main.vl"
         return 1;
     }
-#line 179 "src/main.vl"
+#line 92 "src/main.vl"
     if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
-#line 180 "src/main.vl"
+#line 93 "src/main.vl"
         println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
-#line 181 "src/main.vl"
+#line 94 "src/main.vl"
         return 1;
     }
-#line 183 "src/main.vl"
+#line 96 "src/main.vl"
     if ((debug_mode && release_mode)) {
-#line 184 "src/main.vl"
+#line 97 "src/main.vl"
         println_str("[Velo Error] Cannot specify both --debug and --release");
-#line 185 "src/main.vl"
+#line 98 "src/main.vl"
         return 1;
     }
-#line 187 "src/main.vl"
+#line 100 "src/main.vl"
     const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
-#line 188 "src/main.vl"
+#line 101 "src/main.vl"
     if (unsafe_heap) {
-#line 189 "src/main.vl"
+#line 102 "src/main.vl"
         StringBuilder u_sb = create_sb((((usize)strlen(opt_flags)) + 32));
-#line 190 "src/main.vl"
+#line 103 "src/main.vl"
         sb_append_str((&(u_sb)), opt_flags);
-#line 190 "src/main.vl"
+#line 103 "src/main.vl"
         sb_append_str((&(u_sb)), " -DVELO_UNSAFE_HEAP");
-#line 190 "src/main.vl"
+#line 103 "src/main.vl"
         opt_flags = sb_to_string((&(u_sb)));
     }
-#line 192 "src/main.vl"
+#line 105 "src/main.vl"
     const char* linker_flags = sb_to_string((&(linker_sb)));
-#line 193 "src/main.vl"
-    bool ok = false;
-#line 194 "src/main.vl"
+#line 106 "src/main.vl"
+    int32_t exit_code = 0;
+#line 107 "src/main.vl"
     {
         size_t __zone_wm_1 = velo_zone_push();
+#line 108 "src/main.vl"
+        exit_code = run_source_file_all_opts(source_file, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety);
+        velo_zone_pop(__zone_wm_1);
+    }
+#line 110 "src/main.vl"
+    return exit_code;
+}
+
+#line 113 "src/main.vl"
+int32_t handle_run_cmd(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives) {
+#line 114 "src/main.vl"
+    return handle_run_cmd_opts(argc, argv, unsafe_index, no_line_directives, false);
+}
+
+#line 118 "src/main.vl"
+int32_t handle_build_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
+#line 119 "src/main.vl"
+    if ((argc < 3)) {
+#line 120 "src/main.vl"
+        println_str("[Velo Error] 'build' requires a source file path");
+#line 121 "src/main.vl"
+        return 1;
+    }
+#line 123 "src/main.vl"
+    const char* source_file = "";
+#line 124 "src/main.vl"
+    const char* output_exe = "";
+#line 125 "src/main.vl"
+    const char* cc = "gcc";
+#line 126 "src/main.vl"
+    bool debug_mode = false;
+#line 127 "src/main.vl"
+    bool release_mode = false;
+#line 128 "src/main.vl"
+    bool unsafe_heap = false;
+#line 129 "src/main.vl"
+    const char* opt_level = "";
+#line 130 "src/main.vl"
+    StringBuilder linker_sb = create_sb(256);
+#line 131 "src/main.vl"
+    int32_t i = 2;
+#line 132 "src/main.vl"
+    for (int32_t it = 0; ((i < argc)); it++) {
+#line 133 "src/main.vl"
+        const char* arg = argv[i];
+#line 134 "src/main.vl"
+        if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
+#line 135 "src/main.vl"
+            cc = argv[(i + 1)];
+#line 136 "src/main.vl"
+            i += 1;
+        } else
+#line 137 "src/main.vl"
+        if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
+#line 138 "src/main.vl"
+            cc = copy_slice_to_string(arg, 5, (((usize)strlen(arg)) - 5));
+        } else
+#line 139 "src/main.vl"
+        if ((((arg != NULL && "-o" != NULL) ? (strcmp(arg, "-o") == 0) : (arg == "-o")) && ((i + 1) < argc))) {
+#line 140 "src/main.vl"
+            output_exe = argv[(i + 1)];
+#line 141 "src/main.vl"
+            i += 1;
+        } else
+#line 142 "src/main.vl"
+        if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
+#line 143 "src/main.vl"
+            debug_mode = true;
+        } else
+#line 144 "src/main.vl"
+        if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
+#line 145 "src/main.vl"
+            release_mode = true;
+        } else
+#line 146 "src/main.vl"
+        if (((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") == 0) : (arg == "--unsafe-heap"))) {
+#line 147 "src/main.vl"
+            unsafe_heap = true;
+        } else
+#line 148 "src/main.vl"
+        if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
+#line 149 "src/main.vl"
+            opt_level = argv[(i + 1)];
+#line 150 "src/main.vl"
+            i += 1;
+        } else
+#line 151 "src/main.vl"
+        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
+#line 152 "src/main.vl"
+            opt_level = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
+        } else
+#line 153 "src/main.vl"
+        if ((((arg != NULL && "-l" != NULL) ? (strcmp(arg, "-l") == 0) : (arg == "-l")) && ((i + 1) < argc))) {
+#line 154 "src/main.vl"
+            if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
+#line 154 "src/main.vl"
+                sb_append_char((&(linker_sb)), ' ');
+            }
+#line 155 "src/main.vl"
+            sb_append_str((&(linker_sb)), "-l");
+#line 156 "src/main.vl"
+            sb_append_str((&(linker_sb)), argv[(i + 1)]);
+#line 157 "src/main.vl"
+            i += 1;
+        } else
+#line 158 "src/main.vl"
+        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'l'))) {
+#line 159 "src/main.vl"
+            if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
+#line 159 "src/main.vl"
+                sb_append_char((&(linker_sb)), ' ');
+            }
+#line 160 "src/main.vl"
+            sb_append_str((&(linker_sb)), arg);
+        } else
+#line 161 "src/main.vl"
+        if ((((arg != NULL && "-L" != NULL) ? (strcmp(arg, "-L") == 0) : (arg == "-L")) && ((i + 1) < argc))) {
+#line 162 "src/main.vl"
+            if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
+#line 162 "src/main.vl"
+                sb_append_char((&(linker_sb)), ' ');
+            }
+#line 163 "src/main.vl"
+            sb_append_str((&(linker_sb)), "-L");
+#line 164 "src/main.vl"
+            sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
+#line 165 "src/main.vl"
+            i += 1;
+        } else
+#line 166 "src/main.vl"
+        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'L'))) {
+#line 167 "src/main.vl"
+            if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
+#line 167 "src/main.vl"
+                sb_append_char((&(linker_sb)), ' ');
+            }
+#line 168 "src/main.vl"
+            sb_append_str((&(linker_sb)), "-L");
+#line 169 "src/main.vl"
+            const char* raw_arg = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
+#line 170 "src/main.vl"
+            sb_append_str((&(linker_sb)), quote_path(path_to_native_str(raw_arg)));
+        } else
+#line 171 "src/main.vl"
+        if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
+#line 172 "src/main.vl"
+            source_file = arg;
+        }
+#line 174 "src/main.vl"
+        i += 1;
+        __loop_cont_754: __attribute__((unused));
+    }
+    __loop_break_754: __attribute__((unused));
+#line 176 "src/main.vl"
+    if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
+#line 177 "src/main.vl"
+        println_str("[Velo Error] 'build' requires a source file path");
+#line 178 "src/main.vl"
+        return 1;
+    }
+#line 180 "src/main.vl"
+    if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
+#line 181 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
+#line 182 "src/main.vl"
+        return 1;
+    }
+#line 184 "src/main.vl"
+    if ((debug_mode && release_mode)) {
+#line 185 "src/main.vl"
+        println_str("[Velo Error] Cannot specify both --debug and --release");
+#line 186 "src/main.vl"
+        return 1;
+    }
+#line 188 "src/main.vl"
+    const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
+#line 189 "src/main.vl"
+    if (unsafe_heap) {
+#line 190 "src/main.vl"
+        StringBuilder u_sb = create_sb((((usize)strlen(opt_flags)) + 32));
+#line 191 "src/main.vl"
+        sb_append_str((&(u_sb)), opt_flags);
+#line 191 "src/main.vl"
+        sb_append_str((&(u_sb)), " -DVELO_UNSAFE_HEAP");
+#line 191 "src/main.vl"
+        opt_flags = sb_to_string((&(u_sb)));
+    }
+#line 193 "src/main.vl"
+    const char* linker_flags = sb_to_string((&(linker_sb)));
+#line 194 "src/main.vl"
+    bool ok = false;
 #line 195 "src/main.vl"
-        ok = build_executable_all_opts(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety);
+    {
+        size_t __zone_wm_1 = velo_zone_push();
 #line 196 "src/main.vl"
-        if (ok) {
+        ok = build_executable_all_opts(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety);
 #line 197 "src/main.vl"
+        if (ok) {
+#line 198 "src/main.vl"
             println_str("[Velo] Successfully built binary!");
         } else {
-#line 199 "src/main.vl"
+#line 200 "src/main.vl"
             println_str("[Velo Error] Build failed.");
         }
         velo_zone_pop(__zone_wm_1);
     }
-#line 202 "src/main.vl"
-    if (ok) {
 #line 203 "src/main.vl"
+    if (ok) {
+#line 204 "src/main.vl"
         return 0;
     }
-#line 205 "src/main.vl"
+#line 206 "src/main.vl"
     return 1;
 }
 
-#line 208 "src/main.vl"
-int32_t handle_build_cmd(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives) {
 #line 209 "src/main.vl"
+int32_t handle_build_cmd(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives) {
+#line 210 "src/main.vl"
     return handle_build_cmd_opts(argc, argv, unsafe_index, no_line_directives, false);
 }
 
@@ -67328,12 +67648,12 @@ int32_t read_lsp_line(BufferedReader* r, uint8_t* out_buf, size_t max_len) {
                 return (-1);
             }
 #line 17 "src/main.vl"
-            goto __loop_break_754;
+            goto __loop_break_755;
         }
 #line 19 "src/main.vl"
         if ((b == ((uint8_t)(10)))) {
 #line 20 "src/main.vl"
-            goto __loop_break_754;
+            goto __loop_break_755;
         }
 #line 22 "src/main.vl"
         if ((b != ((uint8_t)(13)))) {
@@ -67342,9 +67662,9 @@ int32_t read_lsp_line(BufferedReader* r, uint8_t* out_buf, size_t max_len) {
 #line 24 "src/main.vl"
             count += 1;
         }
-        __loop_cont_754: __attribute__((unused));
+        __loop_cont_755: __attribute__((unused));
     }
-    __loop_break_754: __attribute__((unused));
+    __loop_break_755: __attribute__((unused));
 #line 27 "src/main.vl"
     out_buf[count] = ((uint8_t)(0));
 #line 28 "src/main.vl"
@@ -67385,9 +67705,9 @@ bool line_starts_with_ci(uint8_t* buf, size_t len, const char* prefix) {
         }
 #line 42 "src/main.vl"
         i += 1;
-        __loop_cont_755: __attribute__((unused));
+        __loop_cont_756: __attribute__((unused));
     }
-    __loop_break_755: __attribute__((unused));
+    __loop_break_756: __attribute__((unused));
 #line 44 "src/main.vl"
     return true;
 }
@@ -67400,9 +67720,9 @@ size_t parse_header_length(uint8_t* buf, size_t len) {
     for (int32_t it = 0; (((i < len) && (buf[i] != ((uint8_t)(':'))))); it++) {
 #line 51 "src/main.vl"
         i += 1;
-        __loop_cont_756: __attribute__((unused));
+        __loop_cont_757: __attribute__((unused));
     }
-    __loop_break_756: __attribute__((unused));
+    __loop_break_757: __attribute__((unused));
 #line 53 "src/main.vl"
     if (((i < len) && (buf[i] == ((uint8_t)(':'))))) {
 #line 54 "src/main.vl"
@@ -67412,9 +67732,9 @@ size_t parse_header_length(uint8_t* buf, size_t len) {
     for (int32_t it = 0; (((i < len) && ((buf[i] == ((uint8_t)(' '))) || (buf[i] == ((uint8_t)('\t')))))); it++) {
 #line 57 "src/main.vl"
         i += 1;
-        __loop_cont_757: __attribute__((unused));
+        __loop_cont_758: __attribute__((unused));
     }
-    __loop_break_757: __attribute__((unused));
+    __loop_break_758: __attribute__((unused));
 #line 59 "src/main.vl"
     size_t result = 0;
 #line 60 "src/main.vl"
@@ -67423,9 +67743,9 @@ size_t parse_header_length(uint8_t* buf, size_t len) {
         result = ((result * 10) + ((size_t)((buf[i] - ((uint8_t)('0'))))));
 #line 62 "src/main.vl"
         i += 1;
-        __loop_cont_758: __attribute__((unused));
+        __loop_cont_759: __attribute__((unused));
     }
-    __loop_break_758: __attribute__((unused));
+    __loop_break_759: __attribute__((unused));
 #line 64 "src/main.vl"
     return result;
 }
@@ -67450,7 +67770,7 @@ const char* read_lsp_message(BufferedReader* r, uint8_t* line_buf) {
 #line 78 "src/main.vl"
             if (has_len) {
 #line 79 "src/main.vl"
-                goto __loop_break_759;
+                goto __loop_break_760;
             }
         } else {
 #line 82 "src/main.vl"
@@ -67461,9 +67781,9 @@ const char* read_lsp_message(BufferedReader* r, uint8_t* line_buf) {
                 has_len = true;
             }
         }
-        __loop_cont_759: __attribute__((unused));
+        __loop_cont_760: __attribute__((unused));
     }
-    __loop_break_759: __attribute__((unused));
+    __loop_break_760: __attribute__((unused));
 #line 89 "src/main.vl"
     if (((!has_len) || velo_cmp_eq_u_s(content_len, 0))) {
 #line 90 "src/main.vl"
@@ -67493,9 +67813,9 @@ const char* read_lsp_message(BufferedReader* r, uint8_t* line_buf) {
         }
 #line 106 "src/main.vl"
         read_total += n;
-        __loop_cont_760: __attribute__((unused));
+        __loop_cont_761: __attribute__((unused));
     }
-    __loop_break_760: __attribute__((unused));
+    __loop_break_761: __attribute__((unused));
 #line 108 "src/main.vl"
     body_buf[content_len] = ((uint8_t)(0));
 #line 109 "src/main.vl"
@@ -67563,9 +67883,9 @@ void lsp_json_escape(StringBuilder* sb, const char* s) {
         }
 #line 142 "src/main.vl"
         i += 1;
-        __loop_cont_761: __attribute__((unused));
+        __loop_cont_762: __attribute__((unused));
     }
-    __loop_break_761: __attribute__((unused));
+    __loop_break_762: __attribute__((unused));
 }
 
 #line 147 "src/main.vl"
@@ -67601,9 +67921,9 @@ void lsp_append_id(StringBuilder* sb, JsonValue* id_node) {
             sb_append_char(sb, b);
 #line 162 "src/main.vl"
             i += 1;
-            __loop_cont_762: __attribute__((unused));
+            __loop_cont_763: __attribute__((unused));
         }
-        __loop_break_762: __attribute__((unused));
+        __loop_break_763: __attribute__((unused));
 #line 164 "src/main.vl"
         sb_append_char(sb, '"');
     } else {
@@ -67696,9 +68016,9 @@ const char* lsp_path_to_uri(const char* path) {
         }
 #line 218 "src/main.vl"
         i += 1;
-        __loop_cont_763: __attribute__((unused));
+        __loop_cont_764: __attribute__((unused));
     }
-    __loop_break_763: __attribute__((unused));
+    __loop_break_764: __attribute__((unused));
 #line 220 "src/main.vl"
     return sb_to_string((&(sb)));
 }
@@ -67914,9 +68234,9 @@ void lsp_publish_collected_diagnostics(const char* uri, int32_t version) {
         }
 #line 100 "src/main.vl"
         cur = cur->next;
-        __loop_cont_764: __attribute__((unused));
+        __loop_cont_765: __attribute__((unused));
     }
-    __loop_break_764: __attribute__((unused));
+    __loop_break_765: __attribute__((unused));
 #line 103 "src/main.vl"
     sb_append_str((&(sb)), "]}}");
 #line 104 "src/main.vl"
@@ -67990,9 +68310,9 @@ void lsp_analyze_document(const char* uri, const char* text, int32_t version) {
                         }
 #line 150 "src/main.vl"
                         cur = cur->next;
-                        __loop_cont_765: __attribute__((unused));
+                        __loop_cont_766: __attribute__((unused));
                     }
-                    __loop_break_765: __attribute__((unused));
+                    __loop_break_766: __attribute__((unused));
 #line 154 "src/main.vl"
                     StmtNode* decl = prog->first_decl;
 #line 155 "src/main.vl"
@@ -68032,9 +68352,9 @@ void lsp_analyze_document(const char* uri, const char* text, int32_t version) {
                         }
 #line 175 "src/main.vl"
                         decl = nxt;
-                        __loop_cont_766: __attribute__((unused));
+                        __loop_cont_767: __attribute__((unused));
                     }
-                    __loop_break_766: __attribute__((unused));
+                    __loop_break_767: __attribute__((unused));
 #line 178 "src/main.vl"
                     if (((!p.had_error) && (d.first_decl != NULL))) {
 #line 179 "src/main.vl"
@@ -68089,9 +68409,9 @@ const char* lsp_slice_to_heap_str(StrSlice s) {
         buf[i] = s.ptr[i];
 #line 37 "src/main.vl"
         i += 1;
-        __loop_cont_767: __attribute__((unused));
+        __loop_cont_768: __attribute__((unused));
     }
-    __loop_break_767: __attribute__((unused));
+    __loop_break_768: __attribute__((unused));
 #line 39 "src/main.vl"
     buf[s.len] = ((uint8_t)(0));
 #line 40 "src/main.vl"
@@ -68111,9 +68431,9 @@ LspDoc* lsp_find_doc(LspServerState* state, StrSlice uri_slice) {
         }
 #line 50 "src/main.vl"
         cur = cur->next;
-        __loop_cont_768: __attribute__((unused));
+        __loop_cont_769: __attribute__((unused));
     }
-    __loop_break_768: __attribute__((unused));
+    __loop_break_769: __attribute__((unused));
 #line 52 "src/main.vl"
     return NULL;
 }
@@ -68145,9 +68465,9 @@ void lsp_store_doc(LspServerState* state, const char* uri, const char* text, int
         }
 #line 70 "src/main.vl"
         cur = cur->next;
-        __loop_cont_769: __attribute__((unused));
+        __loop_cont_770: __attribute__((unused));
     }
-    __loop_break_769: __attribute__((unused));
+    __loop_break_770: __attribute__((unused));
 #line 72 "src/main.vl"
     LspDoc* node = ((LspDoc*)velo_heap_alloc(sizeof(LspDoc), (size_t)(1)));
 #line 73 "src/main.vl"
@@ -68199,9 +68519,9 @@ void lsp_close_doc(LspServerState* state, StrSlice uri_slice) {
         prev = cur;
 #line 101 "src/main.vl"
         cur = cur->next;
-        __loop_cont_770: __attribute__((unused));
+        __loop_cont_771: __attribute__((unused));
     }
-    __loop_break_770: __attribute__((unused));
+    __loop_break_771: __attribute__((unused));
 }
 
 #line 106 "src/main.vl"
@@ -68428,7 +68748,7 @@ bool lsp_extract_word_at_pos(const char* text, int32_t line0, int32_t char0, uin
 #line 217 "src/main.vl"
         if ((cur_line == line0)) {
 #line 217 "src/main.vl"
-            goto __loop_break_771;
+            goto __loop_break_772;
         }
 #line 218 "src/main.vl"
         if ((text[i] == ((uint8_t)('\n')))) {
@@ -68439,9 +68759,9 @@ bool lsp_extract_word_at_pos(const char* text, int32_t line0, int32_t char0, uin
         }
 #line 222 "src/main.vl"
         i += 1;
-        __loop_cont_771: __attribute__((unused));
+        __loop_cont_772: __attribute__((unused));
     }
-    __loop_break_771: __attribute__((unused));
+    __loop_break_772: __attribute__((unused));
 #line 224 "src/main.vl"
     if (((cur_line != line0) || (line_start >= tlen))) {
 #line 224 "src/main.vl"
@@ -68453,9 +68773,9 @@ bool lsp_extract_word_at_pos(const char* text, int32_t line0, int32_t char0, uin
     for (int32_t it = 0; ((((line_end < tlen) && (text[line_end] != ((uint8_t)('\n')))) && (text[line_end] != ((uint8_t)('\r'))))); it++) {
 #line 228 "src/main.vl"
         line_end += 1;
-        __loop_cont_772: __attribute__((unused));
+        __loop_cont_773: __attribute__((unused));
     }
-    __loop_break_772: __attribute__((unused));
+    __loop_break_773: __attribute__((unused));
 #line 230 "src/main.vl"
     size_t line_len = (line_end - line_start);
 #line 231 "src/main.vl"
@@ -68493,18 +68813,18 @@ bool lsp_extract_word_at_pos(const char* text, int32_t line0, int32_t char0, uin
     for (int32_t it = 0; ((velo_cmp_gt_u_s(s_pos, 0) && is_ident_part(text[((line_start + s_pos) - 1)]))); it++) {
 #line 248 "src/main.vl"
         s_pos -= 1;
-        __loop_cont_773: __attribute__((unused));
+        __loop_cont_774: __attribute__((unused));
     }
-    __loop_break_773: __attribute__((unused));
+    __loop_break_774: __attribute__((unused));
 #line 250 "src/main.vl"
     size_t e_pos = pos;
 #line 251 "src/main.vl"
     for (int32_t it = 0; (((e_pos < line_len) && is_ident_part(text[(line_start + e_pos)]))); it++) {
 #line 252 "src/main.vl"
         e_pos += 1;
-        __loop_cont_774: __attribute__((unused));
+        __loop_cont_775: __attribute__((unused));
     }
-    __loop_break_774: __attribute__((unused));
+    __loop_break_775: __attribute__((unused));
 #line 255 "src/main.vl"
     size_t word_len = (e_pos - s_pos);
 #line 256 "src/main.vl"
@@ -68527,9 +68847,9 @@ bool lsp_extract_word_at_pos(const char* text, int32_t line0, int32_t char0, uin
         for (int32_t it = 0; (((next_pos < line_len) && ((text[(line_start + next_pos)] == ((uint8_t)(' '))) || (text[(line_start + next_pos)] == ((uint8_t)('\t')))))); it++) {
 #line 266 "src/main.vl"
             next_pos += 1;
-            __loop_cont_775: __attribute__((unused));
+            __loop_cont_776: __attribute__((unused));
         }
-        __loop_break_775: __attribute__((unused));
+        __loop_break_776: __attribute__((unused));
 #line 268 "src/main.vl"
         if (((next_pos < line_len) && is_ident_part(text[(line_start + next_pos)]))) {
 #line 269 "src/main.vl"
@@ -68540,9 +68860,9 @@ bool lsp_extract_word_at_pos(const char* text, int32_t line0, int32_t char0, uin
             for (int32_t it = 0; (((e_pos < line_len) && is_ident_part(text[(line_start + e_pos)]))); it++) {
 #line 272 "src/main.vl"
                 e_pos += 1;
-                __loop_cont_776: __attribute__((unused));
+                __loop_cont_777: __attribute__((unused));
             }
-            __loop_break_776: __attribute__((unused));
+            __loop_break_777: __attribute__((unused));
         }
     }
 #line 277 "src/main.vl"
@@ -68560,9 +68880,9 @@ bool lsp_extract_word_at_pos(const char* text, int32_t line0, int32_t char0, uin
         out_name[k] = text[((line_start + s_pos) + k)];
 #line 282 "src/main.vl"
         k += 1;
-        __loop_cont_777: __attribute__((unused));
+        __loop_cont_778: __attribute__((unused));
     }
-    __loop_break_777: __attribute__((unused));
+    __loop_break_778: __attribute__((unused));
 #line 284 "src/main.vl"
     out_name[final_len] = ((uint8_t)(0));
 #line 285 "src/main.vl"
@@ -68647,9 +68967,9 @@ void lsp_sym_append_func(StringBuilder* sb, StmtNode* decl, int32_t e_line) {
         pcount += 1;
 #line 61 "src/main.vl"
         pcur = pcur->next;
-        __loop_cont_778: __attribute__((unused));
+        __loop_cont_779: __attribute__((unused));
     }
-    __loop_break_778: __attribute__((unused));
+    __loop_break_779: __attribute__((unused));
 #line 63 "src/main.vl"
     sb_append_str(sb, ") -> ");
 #line 64 "src/main.vl"
@@ -68736,9 +69056,9 @@ void lsp_sym_append_data(StringBuilder* sb, StmtNode* decl, int32_t e_line) {
         fcount += 1;
 #line 110 "src/main.vl"
         fcur = fcur->next;
-        __loop_cont_779: __attribute__((unused));
+        __loop_cont_780: __attribute__((unused));
     }
-    __loop_break_779: __attribute__((unused));
+    __loop_break_780: __attribute__((unused));
 #line 112 "src/main.vl"
     sb_append_str(sb, "]}");
 }
@@ -68796,9 +69116,9 @@ void lsp_sym_append_kind(StringBuilder* sb, StmtNode* decl, int32_t e_line) {
         vcount += 1;
 #line 143 "src/main.vl"
         vcur = vcur->next;
-        __loop_cont_780: __attribute__((unused));
+        __loop_cont_781: __attribute__((unused));
     }
-    __loop_break_780: __attribute__((unused));
+    __loop_break_781: __attribute__((unused));
 #line 145 "src/main.vl"
     sb_append_str(sb, "]}");
 }
@@ -68991,9 +69311,9 @@ void lsp_send_document_symbols(JsonValue* id_node, const char* text) {
                     }
 #line 258 "src/main.vl"
                     cur = cur->next;
-                    __loop_cont_781: __attribute__((unused));
+                    __loop_cont_782: __attribute__((unused));
                 }
-                __loop_break_781: __attribute__((unused));
+                __loop_break_782: __attribute__((unused));
             }
         }
         velo_zone_pop(__zone_wm_1);
@@ -69020,9 +69340,9 @@ void lsp_hover_append_slice(StringBuilder* sb, StrSlice sl) {
         sb_append_char(sb, sl.ptr[i]);
 #line 31 "src/main.vl"
         i += 1;
-        __loop_cont_782: __attribute__((unused));
+        __loop_cont_783: __attribute__((unused));
     }
-    __loop_break_782: __attribute__((unused));
+    __loop_break_783: __attribute__((unused));
 }
 
 #line 36 "src/main.vl"
@@ -69108,9 +69428,9 @@ bool lsp_find_local_in_stmt(StmtNode* stmt, const char* target, int32_t max_line
             }
 #line 78 "src/main.vl"
             cur = cur->next;
-            __loop_cont_783: __attribute__((unused));
+            __loop_cont_784: __attribute__((unused));
         }
-        __loop_break_783: __attribute__((unused));
+        __loop_break_784: __attribute__((unused));
     } else
 #line 80 "src/main.vl"
     if ((stmt->kind == STMT_IF)) {
@@ -69171,9 +69491,9 @@ void lsp_format_decl_markdown(StringBuilder* sb, StmtNode* decl, StrSlice filena
             pi += 1;
 #line 103 "src/main.vl"
             p = p->next;
-            __loop_cont_784: __attribute__((unused));
+            __loop_cont_785: __attribute__((unused));
         }
-        __loop_break_784: __attribute__((unused));
+        __loop_break_785: __attribute__((unused));
 #line 105 "src/main.vl"
         sb_append_str(sb, ") -> ");
 #line 106 "src/main.vl"
@@ -69222,9 +69542,9 @@ void lsp_format_decl_markdown(StringBuilder* sb, StmtNode* decl, StrSlice filena
             sb_append_char(sb, '`');
 #line 127 "src/main.vl"
             f = f->next;
-            __loop_cont_785: __attribute__((unused));
+            __loop_cont_786: __attribute__((unused));
         }
-        __loop_break_785: __attribute__((unused));
+        __loop_break_786: __attribute__((unused));
 #line 129 "src/main.vl"
         sb_append_str(sb, "\n\n*declared in ");
 #line 130 "src/main.vl"
@@ -69261,9 +69581,9 @@ void lsp_format_decl_markdown(StringBuilder* sb, StmtNode* decl, StrSlice filena
             vi += 1;
 #line 144 "src/main.vl"
             v = v->next;
-            __loop_cont_786: __attribute__((unused));
+            __loop_cont_787: __attribute__((unused));
         }
-        __loop_break_786: __attribute__((unused));
+        __loop_break_787: __attribute__((unused));
 #line 146 "src/main.vl"
         sb_append_str(sb, "\n\n*declared in ");
 #line 147 "src/main.vl"
@@ -69384,9 +69704,9 @@ void lsp_send_hover_result(JsonValue* id_node, const char* uri, const char* text
                     }
 #line 214 "src/main.vl"
                     cur = cur->next;
-                    __loop_cont_787: __attribute__((unused));
+                    __loop_cont_788: __attribute__((unused));
                 }
-                __loop_break_787: __attribute__((unused));
+                __loop_break_788: __attribute__((unused));
 #line 217 "src/main.vl"
                 if ((enclosing_act != NULL)) {
 #line 219 "src/main.vl"
@@ -69411,13 +69731,13 @@ void lsp_send_hover_result(JsonValue* id_node, const char* uri, const char* text
 #line 227 "src/main.vl"
                             found = true;
 #line 228 "src/main.vl"
-                            goto __loop_break_788;
+                            goto __loop_break_789;
                         }
 #line 230 "src/main.vl"
                         pcur = pcur->next;
-                        __loop_cont_788: __attribute__((unused));
+                        __loop_cont_789: __attribute__((unused));
                     }
-                    __loop_break_788: __attribute__((unused));
+                    __loop_break_789: __attribute__((unused));
 #line 234 "src/main.vl"
                     if (((!found) && (enclosing_act->body != NULL))) {
 #line 235 "src/main.vl"
@@ -69459,13 +69779,13 @@ void lsp_send_hover_result(JsonValue* id_node, const char* uri, const char* text
 #line 255 "src/main.vl"
                             found = true;
 #line 256 "src/main.vl"
-                            goto __loop_break_789;
+                            goto __loop_break_790;
                         }
 #line 258 "src/main.vl"
                         dcur = dcur->next;
-                        __loop_cont_789: __attribute__((unused));
+                        __loop_cont_790: __attribute__((unused));
                     }
-                    __loop_break_789: __attribute__((unused));
+                    __loop_break_790: __attribute__((unused));
                 }
             }
         }
@@ -69595,7 +69915,7 @@ int32_t lsp_find_token_col_in_line(const char* text, int32_t line0, const char* 
 #line 47 "src/main.vl"
         if ((cur_line == line0)) {
 #line 47 "src/main.vl"
-            goto __loop_break_790;
+            goto __loop_break_791;
         }
 #line 48 "src/main.vl"
         if ((text[i] == ((uint8_t)('\n')))) {
@@ -69606,9 +69926,9 @@ int32_t lsp_find_token_col_in_line(const char* text, int32_t line0, const char* 
         }
 #line 52 "src/main.vl"
         i += 1;
-        __loop_cont_790: __attribute__((unused));
+        __loop_cont_791: __attribute__((unused));
     }
-    __loop_break_790: __attribute__((unused));
+    __loop_break_791: __attribute__((unused));
 #line 54 "src/main.vl"
     if (((cur_line != line0) || (line_start >= tlen))) {
 #line 54 "src/main.vl"
@@ -69620,9 +69940,9 @@ int32_t lsp_find_token_col_in_line(const char* text, int32_t line0, const char* 
     for (int32_t it = 0; ((((line_end < tlen) && (text[line_end] != ((uint8_t)('\n')))) && (text[line_end] != ((uint8_t)('\r'))))); it++) {
 #line 58 "src/main.vl"
         line_end += 1;
-        __loop_cont_791: __attribute__((unused));
+        __loop_cont_792: __attribute__((unused));
     }
-    __loop_break_791: __attribute__((unused));
+    __loop_break_792: __attribute__((unused));
 #line 60 "src/main.vl"
     size_t line_len = (line_end - line_start);
 #line 61 "src/main.vl"
@@ -69645,13 +69965,13 @@ int32_t lsp_find_token_col_in_line(const char* text, int32_t line0, const char* 
 #line 69 "src/main.vl"
                 match_name = false;
 #line 70 "src/main.vl"
-                goto __loop_break_793;
+                goto __loop_break_794;
             }
 #line 72 "src/main.vl"
             k += 1;
-            __loop_cont_793: __attribute__((unused));
+            __loop_cont_794: __attribute__((unused));
         }
-        __loop_break_793: __attribute__((unused));
+        __loop_break_794: __attribute__((unused));
 #line 74 "src/main.vl"
         if (match_name) {
 #line 75 "src/main.vl"
@@ -69686,9 +70006,9 @@ int32_t lsp_find_token_col_in_line(const char* text, int32_t line0, const char* 
         }
 #line 89 "src/main.vl"
         c += 1;
-        __loop_cont_792: __attribute__((unused));
+        __loop_cont_793: __attribute__((unused));
     }
-    __loop_break_792: __attribute__((unused));
+    __loop_break_793: __attribute__((unused));
 #line 91 "src/main.vl"
     return 0;
 }
@@ -69723,9 +70043,9 @@ bool lsp_find_local_decl_in_stmt(StmtNode* stmt, const char* target, int32_t max
             }
 #line 109 "src/main.vl"
             cur = cur->next;
-            __loop_cont_794: __attribute__((unused));
+            __loop_cont_795: __attribute__((unused));
         }
-        __loop_break_794: __attribute__((unused));
+        __loop_break_795: __attribute__((unused));
     } else
 #line 111 "src/main.vl"
     if ((stmt->kind == STMT_IF)) {
@@ -69802,9 +70122,9 @@ bool lsp_search_decls_for_name(ProgramNode* prog, const char* text, const char* 
                 }
 #line 143 "src/main.vl"
                 f = f->next;
-                __loop_cont_796: __attribute__((unused));
+                __loop_cont_797: __attribute__((unused));
             }
-            __loop_break_796: __attribute__((unused));
+            __loop_break_797: __attribute__((unused));
         } else
 #line 145 "src/main.vl"
         if ((cur->kind == DECL_KIND)) {
@@ -69832,15 +70152,15 @@ bool lsp_search_decls_for_name(ProgramNode* prog, const char* text, const char* 
                 }
 #line 156 "src/main.vl"
                 v = v->next;
-                __loop_cont_797: __attribute__((unused));
+                __loop_cont_798: __attribute__((unused));
             }
-            __loop_break_797: __attribute__((unused));
+            __loop_break_798: __attribute__((unused));
         }
 #line 159 "src/main.vl"
         cur = cur->next;
-        __loop_cont_795: __attribute__((unused));
+        __loop_cont_796: __attribute__((unused));
     }
-    __loop_break_795: __attribute__((unused));
+    __loop_break_796: __attribute__((unused));
 #line 161 "src/main.vl"
     return false;
 }
@@ -69964,15 +70284,15 @@ bool lsp_search_symbol_in_file(LspServerState* state, const char* file_path, con
 #line 226 "src/main.vl"
                                     found = true;
 #line 227 "src/main.vl"
-                                    goto __loop_break_798;
+                                    goto __loop_break_799;
                                 }
                             }
                         }
 #line 231 "src/main.vl"
                         u = u->next;
-                        __loop_cont_798: __attribute__((unused));
+                        __loop_cont_799: __attribute__((unused));
                     }
-                    __loop_break_798: __attribute__((unused));
+                    __loop_break_799: __attribute__((unused));
                 }
             }
         }
@@ -70059,9 +70379,9 @@ void lsp_send_definition_result(JsonValue* id_node, LspServerState* state, const
                     }
 #line 288 "src/main.vl"
                     cur = cur->next;
-                    __loop_cont_799: __attribute__((unused));
+                    __loop_cont_800: __attribute__((unused));
                 }
-                __loop_break_799: __attribute__((unused));
+                __loop_break_800: __attribute__((unused));
 #line 291 "src/main.vl"
                 if ((enclosing_act != NULL)) {
 #line 293 "src/main.vl"
@@ -70088,13 +70408,13 @@ void lsp_send_definition_result(JsonValue* id_node, LspServerState* state, const
 #line 302 "src/main.vl"
                             found = true;
 #line 303 "src/main.vl"
-                            goto __loop_break_800;
+                            goto __loop_break_801;
                         }
 #line 305 "src/main.vl"
                         pcur = pcur->next;
-                        __loop_cont_800: __attribute__((unused));
+                        __loop_cont_801: __attribute__((unused));
                     }
-                    __loop_break_800: __attribute__((unused));
+                    __loop_break_801: __attribute__((unused));
 #line 309 "src/main.vl"
                     if (((!found) && (enclosing_act->body != NULL))) {
 #line 310 "src/main.vl"
@@ -70175,15 +70495,15 @@ void lsp_send_definition_result(JsonValue* id_node, LspServerState* state, const
 #line 354 "src/main.vl"
                                     found = true;
 #line 355 "src/main.vl"
-                                    goto __loop_break_801;
+                                    goto __loop_break_802;
                                 }
                             }
                         }
 #line 359 "src/main.vl"
                         ucur = ucur->next;
-                        __loop_cont_801: __attribute__((unused));
+                        __loop_cont_802: __attribute__((unused));
                     }
-                    __loop_break_801: __attribute__((unused));
+                    __loop_break_802: __attribute__((unused));
                 }
 #line 364 "src/main.vl"
                 if ((!found)) {
@@ -70265,9 +70585,9 @@ bool lsp_str_starts_with(const char* s, const char* prefix) {
         }
 #line 20 "src/main.vl"
         i += 1;
-        __loop_cont_802: __attribute__((unused));
+        __loop_cont_803: __attribute__((unused));
     }
-    __loop_break_802: __attribute__((unused));
+    __loop_break_803: __attribute__((unused));
 #line 22 "src/main.vl"
     return true;
 }
@@ -70789,9 +71109,9 @@ void lsp_complete_globals(StringBuilder* sb, ProgramNode* prog, const char* toke
             }
 #line 208 "src/main.vl"
             cur = cur->next;
-            __loop_cont_803: __attribute__((unused));
+            __loop_cont_804: __attribute__((unused));
         }
-        __loop_break_803: __attribute__((unused));
+        __loop_break_804: __attribute__((unused));
     }
 }
 
@@ -70816,9 +71136,9 @@ StmtNode* lsp_find_struct_decl(ProgramNode* prog, const char* name) {
         }
 #line 35 "src/main.vl"
         cur = cur->next;
-        __loop_cont_804: __attribute__((unused));
+        __loop_cont_805: __attribute__((unused));
     }
-    __loop_break_804: __attribute__((unused));
+    __loop_break_805: __attribute__((unused));
 #line 37 "src/main.vl"
     return NULL;
 }
@@ -70863,9 +71183,9 @@ const char* lsp_find_local_type(StmtNode* stmt, const char* var_name, int32_t ma
             }
 #line 59 "src/main.vl"
             cur = cur->next;
-            __loop_cont_805: __attribute__((unused));
+            __loop_cont_806: __attribute__((unused));
         }
-        __loop_break_805: __attribute__((unused));
+        __loop_break_806: __attribute__((unused));
     } else
 #line 61 "src/main.vl"
     if ((stmt->kind == STMT_IF)) {
@@ -70919,9 +71239,9 @@ const char* lsp_resolve_var_type(ProgramNode* prog, const char* var_name, int32_
                 }
 #line 84 "src/main.vl"
                 p = p->next;
-                __loop_cont_807: __attribute__((unused));
+                __loop_cont_808: __attribute__((unused));
             }
-            __loop_break_807: __attribute__((unused));
+            __loop_break_808: __attribute__((unused));
 #line 86 "src/main.vl"
             const char* ltype = lsp_find_local_type(cur_decl->body, var_name, line1);
 #line 87 "src/main.vl"
@@ -70932,9 +71252,9 @@ const char* lsp_resolve_var_type(ProgramNode* prog, const char* var_name, int32_
         }
 #line 89 "src/main.vl"
         cur_decl = cur_decl->next;
-        __loop_cont_806: __attribute__((unused));
+        __loop_cont_807: __attribute__((unused));
     }
-    __loop_break_806: __attribute__((unused));
+    __loop_break_807: __attribute__((unused));
 #line 91 "src/main.vl"
     return NULL;
 }
@@ -70954,18 +71274,18 @@ const char* lsp_clean_type_name(const char* t, uint8_t* out_buf) {
     for (int32_t it = 0; (((start < tlen) && ((t[start] == ((uint8_t)('@'))) || (t[start] == ((uint8_t)(' ')))))); it++) {
 #line 100 "src/main.vl"
         start += 1;
-        __loop_cont_808: __attribute__((unused));
+        __loop_cont_809: __attribute__((unused));
     }
-    __loop_break_808: __attribute__((unused));
+    __loop_break_809: __attribute__((unused));
 #line 102 "src/main.vl"
     size_t end = start;
 #line 103 "src/main.vl"
     for (int32_t it = 0; (((end < tlen) && is_ident_part(t[end]))); it++) {
 #line 104 "src/main.vl"
         end += 1;
-        __loop_cont_809: __attribute__((unused));
+        __loop_cont_810: __attribute__((unused));
     }
-    __loop_break_809: __attribute__((unused));
+    __loop_break_810: __attribute__((unused));
 #line 106 "src/main.vl"
     size_t len = (end - start);
 #line 107 "src/main.vl"
@@ -70981,9 +71301,9 @@ const char* lsp_clean_type_name(const char* t, uint8_t* out_buf) {
         out_buf[i] = t[(start + i)];
 #line 111 "src/main.vl"
         i += 1;
-        __loop_cont_810: __attribute__((unused));
+        __loop_cont_811: __attribute__((unused));
     }
-    __loop_break_810: __attribute__((unused));
+    __loop_break_811: __attribute__((unused));
 #line 113 "src/main.vl"
     out_buf[len] = ((uint8_t)(0));
 #line 114 "src/main.vl"
@@ -71014,9 +71334,9 @@ bool lsp_complete_struct_fields(StringBuilder* sb, ProgramNode* prog, const char
         }
 #line 128 "src/main.vl"
         f = f->next;
-        __loop_cont_811: __attribute__((unused));
+        __loop_cont_812: __attribute__((unused));
     }
-    __loop_break_811: __attribute__((unused));
+    __loop_break_812: __attribute__((unused));
 #line 130 "src/main.vl"
     return (count > 0);
 }
@@ -71082,7 +71402,7 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
 #line 163 "src/main.vl"
         if ((cur_line == line0)) {
 #line 163 "src/main.vl"
-            goto __loop_break_812;
+            goto __loop_break_813;
         }
 #line 164 "src/main.vl"
         if ((text[i] == ((uint8_t)('\n')))) {
@@ -71093,18 +71413,18 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
         }
 #line 168 "src/main.vl"
         i += 1;
-        __loop_cont_812: __attribute__((unused));
+        __loop_cont_813: __attribute__((unused));
     }
-    __loop_break_812: __attribute__((unused));
+    __loop_break_813: __attribute__((unused));
 #line 170 "src/main.vl"
     size_t line_end = line_start;
 #line 171 "src/main.vl"
     for (int32_t it = 0; ((((line_end < tlen) && (text[line_end] != ((uint8_t)('\n')))) && (text[line_end] != ((uint8_t)('\r'))))); it++) {
 #line 172 "src/main.vl"
         line_end += 1;
-        __loop_cont_813: __attribute__((unused));
+        __loop_cont_814: __attribute__((unused));
     }
-    __loop_break_813: __attribute__((unused));
+    __loop_break_814: __attribute__((unused));
 #line 174 "src/main.vl"
     size_t line_len = (line_end - line_start);
 #line 175 "src/main.vl"
@@ -71133,16 +71453,16 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
 #line 186 "src/main.vl"
             dot_idx = k;
 #line 187 "src/main.vl"
-            goto __loop_break_814;
+            goto __loop_break_815;
         }
 #line 189 "src/main.vl"
         if ((!is_ident_part(c))) {
 #line 189 "src/main.vl"
-            goto __loop_break_814;
+            goto __loop_break_815;
         }
-        __loop_cont_814: __attribute__((unused));
+        __loop_cont_815: __attribute__((unused));
     }
-    __loop_break_814: __attribute__((unused));
+    __loop_break_815: __attribute__((unused));
 #line 192 "src/main.vl"
     diag_collector_start();
 #line 194 "src/main.vl"
@@ -71191,9 +71511,9 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
                 after_len += 1;
 #line 219 "src/main.vl"
                 m += 1;
-                __loop_cont_815: __attribute__((unused));
+                __loop_cont_816: __attribute__((unused));
             }
-            __loop_break_815: __attribute__((unused));
+            __loop_break_816: __attribute__((unused));
 #line 221 "src/main.vl"
             after_buf[after_len] = ((uint8_t)(0));
 #line 222 "src/main.vl"
@@ -71204,18 +71524,18 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
             for (int32_t it = 0; ((velo_cmp_gt_u_s(head_end, 0) && ((text[((line_start + head_end) - 1)] == ((uint8_t)(' '))) || (text[((line_start + head_end) - 1)] == ((uint8_t)('\t')))))); it++) {
 #line 226 "src/main.vl"
                 head_end -= 1;
-                __loop_cont_816: __attribute__((unused));
+                __loop_cont_817: __attribute__((unused));
             }
-            __loop_break_816: __attribute__((unused));
+            __loop_break_817: __attribute__((unused));
 #line 228 "src/main.vl"
             size_t head_start = head_end;
 #line 229 "src/main.vl"
             for (int32_t it = 0; ((velo_cmp_gt_u_s(head_start, 0) && is_ident_part(text[((line_start + head_start) - 1)]))); it++) {
 #line 230 "src/main.vl"
                 head_start -= 1;
-                __loop_cont_817: __attribute__((unused));
+                __loop_cont_818: __attribute__((unused));
             }
-            __loop_break_817: __attribute__((unused));
+            __loop_break_818: __attribute__((unused));
 #line 232 "src/main.vl"
             size_t head_len = (head_end - head_start);
 #line 233 "src/main.vl"
@@ -71230,9 +71550,9 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
                     head_buf[hi] = text[((line_start + head_start) + hi)];
 #line 238 "src/main.vl"
                     hi += 1;
-                    __loop_cont_818: __attribute__((unused));
+                    __loop_cont_819: __attribute__((unused));
                 }
-                __loop_break_818: __attribute__((unused));
+                __loop_break_819: __attribute__((unused));
 #line 240 "src/main.vl"
                 head_buf[head_len] = ((uint8_t)(0));
 #line 241 "src/main.vl"
@@ -71249,9 +71569,9 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
                     for (int32_t it = 0; ((velo_cmp_gt_u_s(prev_dot, 0) && ((text[((line_start + prev_dot) - 1)] == ((uint8_t)(' '))) || (text[((line_start + prev_dot) - 1)] == ((uint8_t)('\t')))))); it++) {
 #line 248 "src/main.vl"
                         prev_dot -= 1;
-                        __loop_cont_819: __attribute__((unused));
+                        __loop_cont_820: __attribute__((unused));
                     }
-                    __loop_break_819: __attribute__((unused));
+                    __loop_break_820: __attribute__((unused));
 #line 250 "src/main.vl"
                     if ((velo_cmp_gt_u_s(prev_dot, 0) && (text[((line_start + prev_dot) - 1)] == ((uint8_t)('.'))))) {
 #line 251 "src/main.vl"
@@ -71260,18 +71580,18 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
                         for (int32_t it = 0; ((velo_cmp_gt_u_s(parent_end, 0) && ((text[((line_start + parent_end) - 1)] == ((uint8_t)(' '))) || (text[((line_start + parent_end) - 1)] == ((uint8_t)('\t')))))); it++) {
 #line 253 "src/main.vl"
                             parent_end -= 1;
-                            __loop_cont_820: __attribute__((unused));
+                            __loop_cont_821: __attribute__((unused));
                         }
-                        __loop_break_820: __attribute__((unused));
+                        __loop_break_821: __attribute__((unused));
 #line 255 "src/main.vl"
                         size_t parent_start = parent_end;
 #line 256 "src/main.vl"
                         for (int32_t it = 0; ((velo_cmp_gt_u_s(parent_start, 0) && is_ident_part(text[((line_start + parent_start) - 1)]))); it++) {
 #line 257 "src/main.vl"
                             parent_start -= 1;
-                            __loop_cont_821: __attribute__((unused));
+                            __loop_cont_822: __attribute__((unused));
                         }
-                        __loop_break_821: __attribute__((unused));
+                        __loop_break_822: __attribute__((unused));
 #line 259 "src/main.vl"
                         size_t parent_len = (parent_end - parent_start);
 #line 260 "src/main.vl"
@@ -71286,9 +71606,9 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
                                 parent_buf[pi] = text[((line_start + parent_start) + pi)];
 #line 265 "src/main.vl"
                                 pi += 1;
-                                __loop_cont_822: __attribute__((unused));
+                                __loop_cont_823: __attribute__((unused));
                             }
-                            __loop_break_822: __attribute__((unused));
+                            __loop_break_823: __attribute__((unused));
 #line 267 "src/main.vl"
                             parent_buf[parent_len] = ((uint8_t)(0));
 #line 268 "src/main.vl"
@@ -71314,13 +71634,13 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
 #line 278 "src/main.vl"
                                                 resolved_type = pf->type_name;
 #line 279 "src/main.vl"
-                                                goto __loop_break_823;
+                                                goto __loop_break_824;
                                             }
 #line 281 "src/main.vl"
                                             pf = pf->next;
-                                            __loop_cont_823: __attribute__((unused));
+                                            __loop_cont_824: __attribute__((unused));
                                         }
-                                        __loop_break_823: __attribute__((unused));
+                                        __loop_break_824: __attribute__((unused));
                                     }
                                 }
                             }
@@ -71350,9 +71670,9 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
             for (int32_t it = 0; ((velo_cmp_gt_u_s(tok_start, 0) && is_ident_part(text[((line_start + tok_start) - 1)]))); it++) {
 #line 303 "src/main.vl"
                 tok_start -= 1;
-                __loop_cont_824: __attribute__((unused));
+                __loop_cont_825: __attribute__((unused));
             }
-            __loop_break_824: __attribute__((unused));
+            __loop_break_825: __attribute__((unused));
 #line 305 "src/main.vl"
             size_t tok_len = (pos_idx - tok_start);
 #line 306 "src/main.vl"
@@ -71365,9 +71685,9 @@ void lsp_handle_completion(LspServerState* state, JsonValue* id_node, JsonValue*
                 tok_buf[ti] = text[((line_start + tok_start) + ti)];
 #line 310 "src/main.vl"
                 ti += 1;
-                __loop_cont_825: __attribute__((unused));
+                __loop_cont_826: __attribute__((unused));
             }
-            __loop_break_825: __attribute__((unused));
+            __loop_break_826: __attribute__((unused));
 #line 312 "src/main.vl"
             tok_buf[ti] = ((uint8_t)(0));
 #line 313 "src/main.vl"
@@ -71631,9 +71951,9 @@ bool lsp_decl_has_local(StmtNode* stmt, const char* name) {
             }
 #line 116 "src/main.vl"
             cur = cur->next;
-            __loop_cont_826: __attribute__((unused));
+            __loop_cont_827: __attribute__((unused));
         }
-        __loop_break_826: __attribute__((unused));
+        __loop_break_827: __attribute__((unused));
     } else
 #line 118 "src/main.vl"
     if ((stmt->kind == STMT_IF)) {
@@ -71799,13 +72119,13 @@ void lsp_handle_rename(LspServerState* state, JsonValue* id_node, JsonValue* par
 #line 198 "src/main.vl"
                                 is_param = true;
 #line 199 "src/main.vl"
-                                goto __loop_break_828;
+                                goto __loop_break_829;
                             }
 #line 201 "src/main.vl"
                             pparam = pparam->next;
-                            __loop_cont_828: __attribute__((unused));
+                            __loop_cont_829: __attribute__((unused));
                         }
-                        __loop_break_828: __attribute__((unused));
+                        __loop_break_829: __attribute__((unused));
 #line 203 "src/main.vl"
                         if ((is_param || lsp_decl_has_local(cur->body, old_name))) {
 #line 204 "src/main.vl"
@@ -71816,14 +72136,14 @@ void lsp_handle_rename(LspServerState* state, JsonValue* id_node, JsonValue* par
                                 scope_end_line = (cur->next->line - 1);
                             }
 #line 208 "src/main.vl"
-                            goto __loop_break_827;
+                            goto __loop_break_828;
                         }
                     }
 #line 211 "src/main.vl"
                     cur = cur->next;
-                    __loop_cont_827: __attribute__((unused));
+                    __loop_cont_828: __attribute__((unused));
                 }
-                __loop_break_827: __attribute__((unused));
+                __loop_break_828: __attribute__((unused));
             }
         }
         velo_zone_pop(__zone_wm_1);
@@ -71875,13 +72195,13 @@ void lsp_handle_rename(LspServerState* state, JsonValue* id_node, JsonValue* par
 #line 241 "src/main.vl"
                             match = false;
 #line 242 "src/main.vl"
-                            goto __loop_break_831;
+                            goto __loop_break_832;
                         }
 #line 244 "src/main.vl"
                         k += 1;
-                        __loop_cont_831: __attribute__((unused));
+                        __loop_cont_832: __attribute__((unused));
                     }
-                    __loop_break_831: __attribute__((unused));
+                    __loop_break_832: __attribute__((unused));
 #line 246 "src/main.vl"
                     if (match) {
 #line 247 "src/main.vl"
@@ -71933,22 +72253,22 @@ void lsp_handle_rename(LspServerState* state, JsonValue* id_node, JsonValue* par
                                 sb_append_char((&(sb)), new_name_slice.ptr[ni]);
 #line 266 "src/main.vl"
                                 ni += 1;
-                                __loop_cont_832: __attribute__((unused));
+                                __loop_cont_833: __attribute__((unused));
                             }
-                            __loop_break_832: __attribute__((unused));
+                            __loop_break_833: __attribute__((unused));
 #line 268 "src/main.vl"
                             sb_append_str((&(sb)), "\"}");
 #line 269 "src/main.vl"
                             c += old_len;
 #line 270 "src/main.vl"
-                            goto __loop_cont_830;
+                            goto __loop_cont_831;
                         }
                     }
 #line 273 "src/main.vl"
                     c += 1;
-                    __loop_cont_830: __attribute__((unused));
+                    __loop_cont_831: __attribute__((unused));
                 }
-                __loop_break_830: __attribute__((unused));
+                __loop_break_831: __attribute__((unused));
             }
 #line 276 "src/main.vl"
             cur_l += 1;
@@ -71957,9 +72277,9 @@ void lsp_handle_rename(LspServerState* state, JsonValue* id_node, JsonValue* par
         }
 #line 279 "src/main.vl"
         i += 1;
-        __loop_cont_829: __attribute__((unused));
+        __loop_cont_830: __attribute__((unused));
     }
-    __loop_break_829: __attribute__((unused));
+    __loop_break_830: __attribute__((unused));
 #line 282 "src/main.vl"
     sb_append_str((&(sb)), "]}}}");
 #line 283 "src/main.vl"
@@ -72043,13 +72363,13 @@ bool lsp_doc_has_import(const char* text, const char* mod_name) {
 #line 35 "src/main.vl"
                         match = false;
 #line 36 "src/main.vl"
-                        goto __loop_break_834;
+                        goto __loop_break_835;
                     }
 #line 38 "src/main.vl"
                     k += 1;
-                    __loop_cont_834: __attribute__((unused));
+                    __loop_cont_835: __attribute__((unused));
                 }
-                __loop_break_834: __attribute__((unused));
+                __loop_break_835: __attribute__((unused));
 #line 40 "src/main.vl"
                 if (match) {
 #line 41 "src/main.vl"
@@ -72064,9 +72384,9 @@ bool lsp_doc_has_import(const char* text, const char* mod_name) {
         }
 #line 48 "src/main.vl"
         i += 1;
-        __loop_cont_833: __attribute__((unused));
+        __loop_cont_834: __attribute__((unused));
     }
-    __loop_break_833: __attribute__((unused));
+    __loop_break_834: __attribute__((unused));
 #line 50 "src/main.vl"
     return false;
 }
@@ -72097,13 +72417,13 @@ bool lsp_doc_uses_module(const char* text, const char* mod_name) {
 #line 65 "src/main.vl"
                 match = false;
 #line 66 "src/main.vl"
-                goto __loop_break_836;
+                goto __loop_break_837;
             }
 #line 68 "src/main.vl"
             k += 1;
-            __loop_cont_836: __attribute__((unused));
+            __loop_cont_837: __attribute__((unused));
         }
-        __loop_break_836: __attribute__((unused));
+        __loop_break_837: __attribute__((unused));
 #line 70 "src/main.vl"
         if ((match && (text[(i + mlen)] == ((uint8_t)('.'))))) {
 #line 71 "src/main.vl"
@@ -72121,9 +72441,9 @@ bool lsp_doc_uses_module(const char* text, const char* mod_name) {
         }
 #line 79 "src/main.vl"
         i += 1;
-        __loop_cont_835: __attribute__((unused));
+        __loop_cont_836: __attribute__((unused));
     }
-    __loop_break_835: __attribute__((unused));
+    __loop_break_836: __attribute__((unused));
 #line 81 "src/main.vl"
     return false;
 }
@@ -72695,7 +73015,7 @@ int32_t handle_lsp_command(void) {
 #line 252 "src/main.vl"
         if ((msg == NULL)) {
 #line 253 "src/main.vl"
-            goto __loop_break_837;
+            goto __loop_break_838;
         }
 #line 255 "src/main.vl"
         bool should_exit = lsp_dispatch_message((&(state)), msg);
@@ -72707,11 +73027,11 @@ int32_t handle_lsp_command(void) {
 #line 259 "src/main.vl"
         if (should_exit) {
 #line 260 "src/main.vl"
-            goto __loop_break_837;
+            goto __loop_break_838;
         }
-        __loop_cont_837: __attribute__((unused));
+        __loop_cont_838: __attribute__((unused));
     }
-    __loop_break_837: __attribute__((unused));
+    __loop_break_838: __attribute__((unused));
 #line 264 "src/main.vl"
     if ((line_buf != NULL)) {
 #line 265 "src/main.vl"
@@ -72737,9 +73057,9 @@ int32_t handle_lsp_command(void) {
         velo_heap_free((void*)(((uint8_t*)(cur))));
 #line 279 "src/main.vl"
         cur = nxt;
-        __loop_cont_838: __attribute__((unused));
+        __loop_cont_839: __attribute__((unused));
     }
-    __loop_break_838: __attribute__((unused));
+    __loop_break_839: __attribute__((unused));
 #line 281 "src/main.vl"
     state.first_doc = NULL;
 #line 283 "src/main.vl"
@@ -72792,9 +73112,9 @@ void add_fmt_token(FmtTokenList* list, int32_t kind, const char* text, int32_t l
             new_buf[k] = list->tokens[k];
 #line 47 "src/main.vl"
             k += 1;
-            __loop_cont_839: __attribute__((unused));
+            __loop_cont_840: __attribute__((unused));
         }
-        __loop_break_839: __attribute__((unused));
+        __loop_break_840: __attribute__((unused));
 #line 49 "src/main.vl"
         list->tokens = new_buf;
 #line 50 "src/main.vl"
@@ -73074,9 +73394,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
             for (int32_t it = 0; ((((i < n) && velo_cmp_ne_u_s(source[i], '\n')) && velo_cmp_ne_u_s(source[i], '\r'))); it++) {
 #line 142 "src/main.vl"
                 i += 1;
-                __loop_cont_841: __attribute__((unused));
+                __loop_cont_842: __attribute__((unused));
             }
-            __loop_break_841: __attribute__((unused));
+            __loop_break_842: __attribute__((unused));
 #line 144 "src/main.vl"
             const char* text = copy_slice_to_string(source, start_pos, (i - start_pos));
 #line 145 "src/main.vl"
@@ -73126,9 +73446,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
 #line 166 "src/main.vl"
                     col += 1;
                 }
-                __loop_cont_842: __attribute__((unused));
+                __loop_cont_843: __attribute__((unused));
             }
-            __loop_break_842: __attribute__((unused));
+            __loop_break_843: __attribute__((unused));
 #line 169 "src/main.vl"
             if (velo_cmp_gt_u_s(depth, 0)) {
 #line 169 "src/main.vl"
@@ -73159,9 +73479,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
                 }
 #line 182 "src/main.vl"
                 i += 1;
-                __loop_cont_843: __attribute__((unused));
+                __loop_cont_844: __attribute__((unused));
             }
-            __loop_break_843: __attribute__((unused));
+            __loop_break_844: __attribute__((unused));
 #line 184 "src/main.vl"
             if ((i < n)) {
 #line 184 "src/main.vl"
@@ -73192,16 +73512,16 @@ FmtTokenList tokenize_for_fmt(const char* source) {
 #line 194 "src/main.vl"
                 if ((velo_cmp_eq_u_s(source[i], '\n') || velo_cmp_eq_u_s(source[i], '\r'))) {
 #line 195 "src/main.vl"
-                    goto __loop_break_844;
+                    goto __loop_break_845;
                 } else {
 #line 197 "src/main.vl"
                     i += 1;
 #line 198 "src/main.vl"
                     col += 1;
                 }
-                __loop_cont_844: __attribute__((unused));
+                __loop_cont_845: __attribute__((unused));
             }
-            __loop_break_844: __attribute__((unused));
+            __loop_break_845: __attribute__((unused));
 #line 201 "src/main.vl"
             if (((i < n) && velo_cmp_eq_u_s(source[i], '"'))) {
 #line 201 "src/main.vl"
@@ -73232,16 +73552,16 @@ FmtTokenList tokenize_for_fmt(const char* source) {
 #line 211 "src/main.vl"
                 if ((velo_cmp_eq_u_s(source[i], '\n') || velo_cmp_eq_u_s(source[i], '\r'))) {
 #line 212 "src/main.vl"
-                    goto __loop_break_845;
+                    goto __loop_break_846;
                 } else {
 #line 214 "src/main.vl"
                     i += 1;
 #line 215 "src/main.vl"
                     col += 1;
                 }
-                __loop_cont_845: __attribute__((unused));
+                __loop_cont_846: __attribute__((unused));
             }
-            __loop_break_845: __attribute__((unused));
+            __loop_break_846: __attribute__((unused));
 #line 218 "src/main.vl"
             if (((i < n) && velo_cmp_eq_u_s(source[i], '\''))) {
 #line 218 "src/main.vl"
@@ -73262,9 +73582,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
                 i += 1;
 #line 224 "src/main.vl"
                 col += 1;
-                __loop_cont_846: __attribute__((unused));
+                __loop_cont_847: __attribute__((unused));
             }
-            __loop_break_846: __attribute__((unused));
+            __loop_break_847: __attribute__((unused));
 #line 226 "src/main.vl"
             size_t tok_len = (i - start_pos);
 #line 227 "src/main.vl"
@@ -73294,9 +73614,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
                     i += 1;
 #line 240 "src/main.vl"
                     col += 1;
-                    __loop_cont_847: __attribute__((unused));
+                    __loop_cont_848: __attribute__((unused));
                 }
-                __loop_break_847: __attribute__((unused));
+                __loop_break_848: __attribute__((unused));
             } else {
 #line 243 "src/main.vl"
                 for (int32_t it = 0; (((i < n) && (is_digit(source[i]) || velo_cmp_eq_u_s(source[i], '_')))); it++) {
@@ -73304,9 +73624,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
                     i += 1;
 #line 245 "src/main.vl"
                     col += 1;
-                    __loop_cont_848: __attribute__((unused));
+                    __loop_cont_849: __attribute__((unused));
                 }
-                __loop_break_848: __attribute__((unused));
+                __loop_break_849: __attribute__((unused));
 #line 247 "src/main.vl"
                 if (((((i + 1) < n) && velo_cmp_eq_u_s(source[i], '.')) && is_digit(source[(i + 1)]))) {
 #line 248 "src/main.vl"
@@ -73319,9 +73639,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
                         i += 1;
 #line 252 "src/main.vl"
                         col += 1;
-                        __loop_cont_849: __attribute__((unused));
+                        __loop_cont_850: __attribute__((unused));
                     }
-                    __loop_break_849: __attribute__((unused));
+                    __loop_break_850: __attribute__((unused));
                 }
 #line 255 "src/main.vl"
                 if (((i < n) && (velo_cmp_eq_u_s(source[i], 'e') || velo_cmp_eq_u_s(source[i], 'E')))) {
@@ -73342,9 +73662,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
                         i += 1;
 #line 264 "src/main.vl"
                         col += 1;
-                        __loop_cont_850: __attribute__((unused));
+                        __loop_cont_851: __attribute__((unused));
                     }
-                    __loop_break_850: __attribute__((unused));
+                    __loop_break_851: __attribute__((unused));
                 }
             }
 #line 268 "src/main.vl"
@@ -73355,9 +73675,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
                     i += 1;
 #line 271 "src/main.vl"
                     col += 1;
-                    __loop_cont_851: __attribute__((unused));
+                    __loop_cont_852: __attribute__((unused));
                 }
-                __loop_break_851: __attribute__((unused));
+                __loop_break_852: __attribute__((unused));
             }
 #line 274 "src/main.vl"
             const char* text = copy_slice_to_string(source, start_pos, (i - start_pos));
@@ -73401,9 +73721,9 @@ FmtTokenList tokenize_for_fmt(const char* source) {
 #line 296 "src/main.vl"
             col += ((int32_t)(sym_len));
         }
-        __loop_cont_840: __attribute__((unused));
+        __loop_cont_841: __attribute__((unused));
     }
-    __loop_break_840: __attribute__((unused));
+    __loop_break_841: __attribute__((unused));
 #line 299 "src/main.vl"
     return list;
 }
@@ -73659,9 +73979,9 @@ const char* cleanup_formatted_text(const char* text) {
             for (int32_t it = 0; (((j < tlen) && (velo_cmp_eq_u_s(text[j], ' ') || velo_cmp_eq_u_s(text[j], '\t')))); it++) {
 #line 20 "src/main.vl"
                 j += 1;
-                __loop_cont_853: __attribute__((unused));
+                __loop_cont_854: __attribute__((unused));
             }
-            __loop_break_853: __attribute__((unused));
+            __loop_break_854: __attribute__((unused));
 #line 22 "src/main.vl"
             if (((j < tlen) && (velo_cmp_eq_u_s(text[j], '\n') || velo_cmp_eq_u_s(text[j], '\r')))) {
 #line 23 "src/main.vl"
@@ -73683,16 +74003,16 @@ const char* cleanup_formatted_text(const char* text) {
 #line 32 "src/main.vl"
             i += 1;
         }
-        __loop_cont_852: __attribute__((unused));
+        __loop_cont_853: __attribute__((unused));
     }
-    __loop_break_852: __attribute__((unused));
+    __loop_break_853: __attribute__((unused));
 #line 35 "src/main.vl"
     for (int32_t it = 0; ((velo_cmp_gt_u_s(sb.len, 0) && (velo_cmp_eq_u_s(sb.buffer[(sb.len - 1)], '\n') || velo_cmp_eq_u_s(sb.buffer[(sb.len - 1)], '\r')))); it++) {
 #line 36 "src/main.vl"
         sb.len -= 1;
-        __loop_cont_854: __attribute__((unused));
+        __loop_cont_855: __attribute__((unused));
     }
-    __loop_break_854: __attribute__((unused));
+    __loop_break_855: __attribute__((unused));
 #line 38 "src/main.vl"
     if (velo_cmp_gt_u_s(sb.len, 0)) {
 #line 39 "src/main.vl"
@@ -73780,9 +74100,9 @@ const char* format_source(const char* source) {
                     sb_append_char((&(sb)), ' ');
 #line 85 "src/main.vl"
                     s += 1;
-                    __loop_cont_856: __attribute__((unused));
+                    __loop_cont_857: __attribute__((unused));
                 }
-                __loop_break_856: __attribute__((unused));
+                __loop_break_857: __attribute__((unused));
 #line 87 "src/main.vl"
                 at_line_start = false;
             }
@@ -73824,9 +74144,9 @@ const char* format_source(const char* source) {
 #line 111 "src/main.vl"
             i += 1;
         }
-        __loop_cont_855: __attribute__((unused));
+        __loop_cont_856: __attribute__((unused));
     }
-    __loop_break_855: __attribute__((unused));
+    __loop_break_856: __attribute__((unused));
 #line 115 "src/main.vl"
     const char* unformatted = sb_to_string((&(sb)));
 #line 116 "src/main.vl"
@@ -73861,36 +74181,36 @@ void print_fmt_diff(const char* path, const char* original, const char* formatte
             for (int32_t it = 0; ((velo_cmp_gt_u_s(o_start, 0) && velo_cmp_ne_u_s(original[(o_start - 1)], '\n'))); it++) {
 #line 131 "src/main.vl"
                 o_start -= 1;
-                __loop_cont_858: __attribute__((unused));
+                __loop_cont_859: __attribute__((unused));
             }
-            __loop_break_858: __attribute__((unused));
+            __loop_break_859: __attribute__((unused));
 #line 132 "src/main.vl"
             size_t o_end = o_idx;
 #line 133 "src/main.vl"
             for (int32_t it = 0; ((((o_end < olen) && velo_cmp_ne_u_s(original[o_end], '\n')) && velo_cmp_ne_u_s(original[o_end], '\r'))); it++) {
 #line 133 "src/main.vl"
                 o_end += 1;
-                __loop_cont_859: __attribute__((unused));
+                __loop_cont_860: __attribute__((unused));
             }
-            __loop_break_859: __attribute__((unused));
+            __loop_break_860: __attribute__((unused));
 #line 134 "src/main.vl"
             size_t f_start = f_idx;
 #line 135 "src/main.vl"
             for (int32_t it = 0; ((velo_cmp_gt_u_s(f_start, 0) && velo_cmp_ne_u_s(formatted[(f_start - 1)], '\n'))); it++) {
 #line 135 "src/main.vl"
                 f_start -= 1;
-                __loop_cont_860: __attribute__((unused));
+                __loop_cont_861: __attribute__((unused));
             }
-            __loop_break_860: __attribute__((unused));
+            __loop_break_861: __attribute__((unused));
 #line 136 "src/main.vl"
             size_t f_end = f_idx;
 #line 137 "src/main.vl"
             for (int32_t it = 0; ((((f_end < flen) && velo_cmp_ne_u_s(formatted[f_end], '\n')) && velo_cmp_ne_u_s(formatted[f_end], '\r'))); it++) {
 #line 137 "src/main.vl"
                 f_end += 1;
-                __loop_cont_861: __attribute__((unused));
+                __loop_cont_862: __attribute__((unused));
             }
-            __loop_break_861: __attribute__((unused));
+            __loop_break_862: __attribute__((unused));
 #line 139 "src/main.vl"
             const char* o_line = copy_slice_to_string(original, o_start, (o_end - o_start));
 #line 140 "src/main.vl"
@@ -73913,9 +74233,9 @@ void print_fmt_diff(const char* path, const char* original, const char* formatte
         o_idx += 1;
 #line 148 "src/main.vl"
         f_idx += 1;
-        __loop_cont_857: __attribute__((unused));
+        __loop_cont_858: __attribute__((unused));
     }
-    __loop_break_857: __attribute__((unused));
+    __loop_break_858: __attribute__((unused));
 #line 150 "src/main.vl"
     if (((o_idx < olen) || (f_idx < flen))) {
 #line 151 "src/main.vl"
@@ -74014,9 +74334,9 @@ int32_t format_directory(const char* dir_path, bool check_mode) {
                 }
             }
         }
-        __loop_cont_862: __attribute__((unused));
+        __loop_cont_863: __attribute__((unused));
     }
-    __loop_break_862: __attribute__((unused));
+    __loop_break_863: __attribute__((unused));
 #line 205 "src/main.vl"
     fs_dir_close((&(dir_it)));
 #line 206 "src/main.vl"
@@ -74063,9 +74383,9 @@ int32_t handle_fmt_cmd(int32_t argc, const char** argv) {
         }
 #line 229 "src/main.vl"
         i += 1;
-        __loop_cont_863: __attribute__((unused));
+        __loop_cont_864: __attribute__((unused));
     }
-    __loop_break_863: __attribute__((unused));
+    __loop_break_864: __attribute__((unused));
 #line 231 "src/main.vl"
     if (velo_cmp_eq_u_s(((usize)strlen(target_path)), 0)) {
 #line 232 "src/main.vl"
@@ -74148,9 +74468,9 @@ g_velo_os_argv = argv;
         }
 #line 34 "src/main.vl"
         si += 1;
-        __loop_cont_864: __attribute__((unused));
+        __loop_cont_865: __attribute__((unused));
     }
-    __loop_break_864: __attribute__((unused));
+    __loop_break_865: __attribute__((unused));
 #line 37 "src/main.vl"
     if ((((cmd != NULL && "version" != NULL) ? (strcmp(cmd, "version") == 0) : (cmd == "version")) || ((cmd != NULL && "--version" != NULL) ? (strcmp(cmd, "--version") == 0) : (cmd == "--version")))) {
 #line 38 "src/main.vl"
@@ -74168,85 +74488,103 @@ g_velo_os_argv = argv;
         return 0;
     }
 #line 48 "src/main.vl"
-    if ((((cmd != NULL && "lsp" != NULL) ? (strcmp(cmd, "lsp") == 0) : (cmd == "lsp")) || ((cmd != NULL && "--lsp" != NULL) ? (strcmp(cmd, "--lsp") == 0) : (cmd == "--lsp")))) {
+    if ((((cmd != NULL && "explain" != NULL) ? (strcmp(cmd, "explain") == 0) : (cmd == "explain")) || ((cmd != NULL && "--explain" != NULL) ? (strcmp(cmd, "--explain") == 0) : (cmd == "--explain")))) {
 #line 49 "src/main.vl"
+        if ((argc < 3)) {
+#line 50 "src/main.vl"
+            println_str("Usage: velo explain <VELO-E####>");
+#line 51 "src/main.vl"
+            return 1;
+        }
+#line 53 "src/main.vl"
+        const char* code = argv[2];
+#line 54 "src/main.vl"
+        const char* explanation = error_code_explain(code);
+#line 55 "src/main.vl"
+        println_str(explanation);
+#line 56 "src/main.vl"
+        return 0;
+    }
+#line 59 "src/main.vl"
+    if ((((cmd != NULL && "lsp" != NULL) ? (strcmp(cmd, "lsp") == 0) : (cmd == "lsp")) || ((cmd != NULL && "--lsp" != NULL) ? (strcmp(cmd, "--lsp") == 0) : (cmd == "--lsp")))) {
+#line 60 "src/main.vl"
         return handle_lsp_command();
     }
-#line 52 "src/main.vl"
+#line 63 "src/main.vl"
     if (((cmd != NULL && "run" != NULL) ? (strcmp(cmd, "run") == 0) : (cmd == "run"))) {
-#line 53 "src/main.vl"
+#line 64 "src/main.vl"
         return handle_run_cmd_opts(argc, ((const char**)(argv)), unsafe_index, no_line_directives, strict_safety);
     }
-#line 56 "src/main.vl"
+#line 67 "src/main.vl"
     if (((cmd != NULL && "emit-c" != NULL) ? (strcmp(cmd, "emit-c") == 0) : (cmd == "emit-c"))) {
-#line 57 "src/main.vl"
+#line 68 "src/main.vl"
         if ((argc < 3)) {
-#line 58 "src/main.vl"
+#line 69 "src/main.vl"
             println_str("[Velo Error] 'emit-c' requires a source file path");
-#line 59 "src/main.vl"
+#line 70 "src/main.vl"
             return 1;
         }
-#line 61 "src/main.vl"
+#line 72 "src/main.vl"
         const char* source_file = "";
-#line 62 "src/main.vl"
+#line 73 "src/main.vl"
         const char* out_file = "";
-#line 63 "src/main.vl"
+#line 74 "src/main.vl"
         int32_t i = 2;
-#line 64 "src/main.vl"
+#line 75 "src/main.vl"
         for (int32_t it = 0; ((i < argc)); it++) {
-#line 65 "src/main.vl"
+#line 76 "src/main.vl"
             const char* arg = argv[i];
-#line 66 "src/main.vl"
+#line 77 "src/main.vl"
             if (((((arg != NULL && "-o" != NULL) ? (strcmp(arg, "-o") == 0) : (arg == "-o")) || ((arg != NULL && "--output" != NULL) ? (strcmp(arg, "--output") == 0) : (arg == "--output"))) && ((i + 1) < argc))) {
-#line 67 "src/main.vl"
+#line 78 "src/main.vl"
                 out_file = argv[(i + 1)];
-#line 68 "src/main.vl"
+#line 79 "src/main.vl"
                 i += 1;
             } else
-#line 69 "src/main.vl"
+#line 80 "src/main.vl"
             if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
-#line 70 "src/main.vl"
+#line 81 "src/main.vl"
                 source_file = arg;
             }
-#line 72 "src/main.vl"
+#line 83 "src/main.vl"
             i += 1;
-            __loop_cont_865: __attribute__((unused));
+            __loop_cont_866: __attribute__((unused));
         }
-        __loop_break_865: __attribute__((unused));
-#line 74 "src/main.vl"
+        __loop_break_866: __attribute__((unused));
+#line 85 "src/main.vl"
         if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
-#line 75 "src/main.vl"
+#line 86 "src/main.vl"
             println_str("[Velo Error] 'emit-c' requires a source file path");
-#line 76 "src/main.vl"
+#line 87 "src/main.vl"
             return 1;
         }
-#line 78 "src/main.vl"
+#line 89 "src/main.vl"
         {
             size_t __zone_wm_1 = velo_zone_push();
-#line 79 "src/main.vl"
+#line 90 "src/main.vl"
             const char* c_code = compile_source_to_c_strict(source_file, unsafe_index, no_line_directives, strict_safety);
-#line 80 "src/main.vl"
+#line 91 "src/main.vl"
             if ((c_code != NULL)) {
-#line 81 "src/main.vl"
+#line 92 "src/main.vl"
                 if (unsafe_heap) {
-#line 82 "src/main.vl"
+#line 93 "src/main.vl"
                     StringBuilder c_sb = create_sb((((usize)strlen(c_code)) + 32));
-#line 83 "src/main.vl"
+#line 94 "src/main.vl"
                     sb_append_str((&(c_sb)), "#define VELO_UNSAFE_HEAP 1\n");
-#line 84 "src/main.vl"
+#line 95 "src/main.vl"
                     sb_append_str((&(c_sb)), c_code);
-#line 85 "src/main.vl"
+#line 96 "src/main.vl"
                     c_code = sb_to_string((&(c_sb)));
                 }
-#line 87 "src/main.vl"
+#line 98 "src/main.vl"
                 if (velo_cmp_gt_u_s(((usize)strlen(out_file)), 0)) {
-#line 88 "src/main.vl"
+#line 99 "src/main.vl"
                     bool ok = fs_write_str(out_file, c_code);
-#line 89 "src/main.vl"
+#line 100 "src/main.vl"
                     if ((!ok)) {
-#line 90 "src/main.vl"
+#line 101 "src/main.vl"
                         println_str(velo_str_format("[Velo Error] Failed to write output file: %s", (const char*)(out_file)));
-#line 91 "src/main.vl"
+#line 102 "src/main.vl"
                         {
                             int32_t __ret_val = 1;
                             velo_zone_pop(__zone_wm_1);
@@ -74254,11 +74592,11 @@ g_velo_os_argv = argv;
                         }
                     }
                 } else {
-#line 94 "src/main.vl"
+#line 105 "src/main.vl"
                     println_str(c_code);
                 }
             } else {
-#line 97 "src/main.vl"
+#line 108 "src/main.vl"
                 {
                     int32_t __ret_val = 1;
                     velo_zone_pop(__zone_wm_1);
@@ -74267,347 +74605,347 @@ g_velo_os_argv = argv;
             }
             velo_zone_pop(__zone_wm_1);
         }
-#line 100 "src/main.vl"
+#line 111 "src/main.vl"
         return 0;
     }
-#line 103 "src/main.vl"
+#line 114 "src/main.vl"
     if (((cmd != NULL && "build" != NULL) ? (strcmp(cmd, "build") == 0) : (cmd == "build"))) {
-#line 104 "src/main.vl"
+#line 115 "src/main.vl"
         return handle_build_cmd_opts(argc, ((const char**)(argv)), unsafe_index, no_line_directives, strict_safety);
     }
-#line 107 "src/main.vl"
+#line 118 "src/main.vl"
     if (((cmd != NULL && "check" != NULL) ? (strcmp(cmd, "check") == 0) : (cmd == "check"))) {
-#line 108 "src/main.vl"
+#line 119 "src/main.vl"
         if ((argc < 3)) {
-#line 109 "src/main.vl"
+#line 120 "src/main.vl"
             println_str("[Velo Error] 'check' requires a source file path");
-#line 110 "src/main.vl"
+#line 121 "src/main.vl"
             return 1;
         }
-#line 112 "src/main.vl"
+#line 123 "src/main.vl"
         const char* source_file = "";
-#line 113 "src/main.vl"
+#line 124 "src/main.vl"
         bool json_mode = false;
-#line 114 "src/main.vl"
+#line 125 "src/main.vl"
         bool color_always = false;
-#line 115 "src/main.vl"
+#line 126 "src/main.vl"
         int32_t i = 2;
-#line 116 "src/main.vl"
+#line 127 "src/main.vl"
         for (int32_t it = 0; ((i < argc)); it++) {
-#line 117 "src/main.vl"
+#line 128 "src/main.vl"
             const char* arg = argv[i];
-#line 118 "src/main.vl"
+#line 129 "src/main.vl"
             if (((arg != NULL && "--json" != NULL) ? (strcmp(arg, "--json") == 0) : (arg == "--json"))) {
-#line 119 "src/main.vl"
+#line 130 "src/main.vl"
                 json_mode = true;
             } else
-#line 120 "src/main.vl"
+#line 131 "src/main.vl"
             if (((arg != NULL && "--color=always" != NULL) ? (strcmp(arg, "--color=always") == 0) : (arg == "--color=always"))) {
-#line 121 "src/main.vl"
+#line 132 "src/main.vl"
                 color_always = true;
             } else
-#line 122 "src/main.vl"
+#line 133 "src/main.vl"
             if (((((arg != NULL && "--color" != NULL) ? (strcmp(arg, "--color") == 0) : (arg == "--color")) && ((i + 1) < argc)) && ((argv[(i + 1)] != NULL && "always" != NULL) ? (strcmp(argv[(i + 1)], "always") == 0) : (argv[(i + 1)] == "always")))) {
-#line 123 "src/main.vl"
+#line 134 "src/main.vl"
                 color_always = true;
-#line 124 "src/main.vl"
+#line 135 "src/main.vl"
                 i += 1;
             } else
-#line 125 "src/main.vl"
+#line 136 "src/main.vl"
             if ((((arg != NULL && "--color=never" != NULL) ? (strcmp(arg, "--color=never") == 0) : (arg == "--color=never")) || ((arg != NULL && "--color=auto" != NULL) ? (strcmp(arg, "--color=auto") == 0) : (arg == "--color=auto")))) {
             } else
-#line 127 "src/main.vl"
+#line 138 "src/main.vl"
             if (((((arg != NULL && "--color" != NULL) ? (strcmp(arg, "--color") == 0) : (arg == "--color")) && ((i + 1) < argc)) && (((argv[(i + 1)] != NULL && "never" != NULL) ? (strcmp(argv[(i + 1)], "never") == 0) : (argv[(i + 1)] == "never")) || ((argv[(i + 1)] != NULL && "auto" != NULL) ? (strcmp(argv[(i + 1)], "auto") == 0) : (argv[(i + 1)] == "auto"))))) {
-#line 128 "src/main.vl"
+#line 139 "src/main.vl"
                 i += 1;
             } else
-#line 129 "src/main.vl"
+#line 140 "src/main.vl"
             if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
-#line 130 "src/main.vl"
+#line 141 "src/main.vl"
                 source_file = arg;
             }
-#line 132 "src/main.vl"
+#line 143 "src/main.vl"
             i += 1;
-            __loop_cont_866: __attribute__((unused));
+            __loop_cont_867: __attribute__((unused));
         }
-        __loop_break_866: __attribute__((unused));
-#line 134 "src/main.vl"
+        __loop_break_867: __attribute__((unused));
+#line 145 "src/main.vl"
         if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
-#line 135 "src/main.vl"
+#line 146 "src/main.vl"
             println_str("[Velo Error] 'check' requires a source file path");
-#line 136 "src/main.vl"
+#line 147 "src/main.vl"
             return 1;
         }
-#line 138 "src/main.vl"
+#line 149 "src/main.vl"
         if (json_mode) {
-#line 139 "src/main.vl"
+#line 150 "src/main.vl"
             pretty_set_color(false);
-#line 140 "src/main.vl"
+#line 151 "src/main.vl"
             int32_t rc = 0;
-#line 141 "src/main.vl"
+#line 152 "src/main.vl"
             {
                 size_t __zone_wm_2 = velo_zone_push();
-#line 142 "src/main.vl"
+#line 153 "src/main.vl"
                 rc = run_check_json_opts(source_file, unsafe_index, strict_safety);
                 velo_zone_pop(__zone_wm_2);
             }
-#line 144 "src/main.vl"
+#line 155 "src/main.vl"
             return rc;
         }
-#line 146 "src/main.vl"
+#line 157 "src/main.vl"
         pretty_set_color(color_always);
-#line 147 "src/main.vl"
+#line 158 "src/main.vl"
         bool ok = false;
-#line 148 "src/main.vl"
+#line 159 "src/main.vl"
         {
             size_t __zone_wm_3 = velo_zone_push();
-#line 149 "src/main.vl"
+#line 160 "src/main.vl"
             ok = run_check_pretty_opts(source_file, unsafe_index, strict_safety);
             velo_zone_pop(__zone_wm_3);
         }
-#line 151 "src/main.vl"
+#line 162 "src/main.vl"
         if (ok) {
-#line 152 "src/main.vl"
+#line 163 "src/main.vl"
             println_str(velo_str_format("[Velo] Check passed: %s", (const char*)(source_file)));
-#line 153 "src/main.vl"
+#line 164 "src/main.vl"
             return 0;
         }
-#line 155 "src/main.vl"
+#line 166 "src/main.vl"
         return 1;
     }
-#line 158 "src/main.vl"
+#line 169 "src/main.vl"
     if (((cmd != NULL && "doc" != NULL) ? (strcmp(cmd, "doc") == 0) : (cmd == "doc"))) {
-#line 159 "src/main.vl"
+#line 170 "src/main.vl"
         if ((argc < 3)) {
-#line 160 "src/main.vl"
+#line 171 "src/main.vl"
             println_str("[Velo Error] 'doc' requires a source file path");
-#line 161 "src/main.vl"
+#line 172 "src/main.vl"
             return 1;
         }
-#line 163 "src/main.vl"
+#line 174 "src/main.vl"
         const char* source_file = argv[2];
-#line 164 "src/main.vl"
+#line 175 "src/main.vl"
         const char* output_file = "";
-#line 165 "src/main.vl"
+#line 176 "src/main.vl"
         if (((argc >= 5) && ((argv[3] != NULL && "-o" != NULL) ? (strcmp(argv[3], "-o") == 0) : (argv[3] == "-o")))) {
-#line 166 "src/main.vl"
+#line 177 "src/main.vl"
             output_file = argv[4];
         }
-#line 168 "src/main.vl"
+#line 179 "src/main.vl"
         {
             size_t __zone_wm_4 = velo_zone_push();
-#line 169 "src/main.vl"
+#line 180 "src/main.vl"
             const char* docs = generate_docs_for_source(source_file);
-#line 170 "src/main.vl"
+#line 181 "src/main.vl"
             if ((docs == NULL)) {
-#line 171 "src/main.vl"
+#line 182 "src/main.vl"
                 {
                     int32_t __ret_val = 1;
                     velo_zone_pop(__zone_wm_4);
                     return __ret_val;
                 }
             }
-#line 173 "src/main.vl"
+#line 184 "src/main.vl"
             if (velo_cmp_gt_u_s(((usize)strlen(output_file)), 0)) {
-#line 174 "src/main.vl"
+#line 185 "src/main.vl"
                 fs_write_str(output_file, docs);
-#line 175 "src/main.vl"
+#line 186 "src/main.vl"
                 println_str(velo_str_format("[Velo] Successfully generated documentation: %s", (const char*)(output_file)));
             } else {
-#line 177 "src/main.vl"
+#line 188 "src/main.vl"
                 print_str(docs);
-#line 177 "src/main.vl"
+#line 188 "src/main.vl"
                 io_flush_stdout();
             }
             velo_zone_pop(__zone_wm_4);
         }
-#line 180 "src/main.vl"
+#line 191 "src/main.vl"
         return 0;
     }
-#line 183 "src/main.vl"
+#line 194 "src/main.vl"
     if (((cmd != NULL && "test" != NULL) ? (strcmp(cmd, "test") == 0) : (cmd == "test"))) {
-#line 184 "src/main.vl"
+#line 195 "src/main.vl"
         const char* target_path = "";
-#line 185 "src/main.vl"
+#line 196 "src/main.vl"
         const char* filter_arg = "";
-#line 186 "src/main.vl"
+#line 197 "src/main.vl"
         const char* cc = "gcc";
-#line 187 "src/main.vl"
+#line 198 "src/main.vl"
         bool debug_mode = false;
-#line 188 "src/main.vl"
+#line 199 "src/main.vl"
         bool release_mode = false;
-#line 189 "src/main.vl"
+#line 200 "src/main.vl"
         const char* opt_level = "";
-#line 190 "src/main.vl"
+#line 201 "src/main.vl"
         StringBuilder linker_sb = create_sb(256);
-#line 191 "src/main.vl"
+#line 202 "src/main.vl"
         int32_t i = 2;
-#line 192 "src/main.vl"
+#line 203 "src/main.vl"
         for (int32_t it = 0; ((i < argc)); it++) {
-#line 193 "src/main.vl"
+#line 204 "src/main.vl"
             const char* arg = argv[i];
-#line 194 "src/main.vl"
+#line 205 "src/main.vl"
             if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
-#line 194 "src/main.vl"
+#line 205 "src/main.vl"
                 cc = argv[(i + 1)];
-#line 194 "src/main.vl"
+#line 205 "src/main.vl"
                 i += 1;
             } else
-#line 195 "src/main.vl"
+#line 206 "src/main.vl"
             if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
-#line 195 "src/main.vl"
+#line 206 "src/main.vl"
                 cc = copy_slice_to_string(arg, 5, (((usize)strlen(arg)) - 5));
             } else
-#line 196 "src/main.vl"
+#line 207 "src/main.vl"
             if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
-#line 196 "src/main.vl"
+#line 207 "src/main.vl"
                 debug_mode = true;
             } else
-#line 197 "src/main.vl"
+#line 208 "src/main.vl"
             if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
-#line 197 "src/main.vl"
+#line 208 "src/main.vl"
                 release_mode = true;
             } else
-#line 198 "src/main.vl"
+#line 209 "src/main.vl"
             if (((((arg != NULL && "--filter" != NULL) ? (strcmp(arg, "--filter") == 0) : (arg == "--filter")) || ((arg != NULL && "-k" != NULL) ? (strcmp(arg, "-k") == 0) : (arg == "-k"))) && ((i + 1) < argc))) {
-#line 198 "src/main.vl"
+#line 209 "src/main.vl"
                 filter_arg = argv[(i + 1)];
-#line 198 "src/main.vl"
+#line 209 "src/main.vl"
                 i += 1;
             } else
-#line 199 "src/main.vl"
+#line 210 "src/main.vl"
             if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
-#line 199 "src/main.vl"
+#line 210 "src/main.vl"
                 opt_level = argv[(i + 1)];
-#line 199 "src/main.vl"
+#line 210 "src/main.vl"
                 i += 1;
             } else
-#line 200 "src/main.vl"
+#line 211 "src/main.vl"
             if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
-#line 200 "src/main.vl"
+#line 211 "src/main.vl"
                 opt_level = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
             } else
-#line 201 "src/main.vl"
+#line 212 "src/main.vl"
             if ((((arg != NULL && "-l" != NULL) ? (strcmp(arg, "-l") == 0) : (arg == "-l")) && ((i + 1) < argc))) {
-#line 201 "src/main.vl"
+#line 212 "src/main.vl"
                 if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 201 "src/main.vl"
+#line 212 "src/main.vl"
                     sb_append_char((&(linker_sb)), ' ');
                 }
-#line 201 "src/main.vl"
+#line 212 "src/main.vl"
                 sb_append_str((&(linker_sb)), "-l");
-#line 201 "src/main.vl"
+#line 212 "src/main.vl"
                 sb_append_str((&(linker_sb)), argv[(i + 1)]);
-#line 201 "src/main.vl"
+#line 212 "src/main.vl"
                 i += 1;
             } else
-#line 202 "src/main.vl"
+#line 213 "src/main.vl"
             if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'l'))) {
-#line 202 "src/main.vl"
+#line 213 "src/main.vl"
                 if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 202 "src/main.vl"
+#line 213 "src/main.vl"
                     sb_append_char((&(linker_sb)), ' ');
                 }
-#line 202 "src/main.vl"
+#line 213 "src/main.vl"
                 sb_append_str((&(linker_sb)), arg);
             } else
-#line 203 "src/main.vl"
+#line 214 "src/main.vl"
             if ((((arg != NULL && "-L" != NULL) ? (strcmp(arg, "-L") == 0) : (arg == "-L")) && ((i + 1) < argc))) {
-#line 203 "src/main.vl"
+#line 214 "src/main.vl"
                 if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 203 "src/main.vl"
+#line 214 "src/main.vl"
                     sb_append_char((&(linker_sb)), ' ');
                 }
-#line 203 "src/main.vl"
+#line 214 "src/main.vl"
                 sb_append_str((&(linker_sb)), "-L");
-#line 203 "src/main.vl"
+#line 214 "src/main.vl"
                 sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
-#line 203 "src/main.vl"
+#line 214 "src/main.vl"
                 i += 1;
             } else
-#line 204 "src/main.vl"
+#line 215 "src/main.vl"
             if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'L'))) {
-#line 204 "src/main.vl"
+#line 215 "src/main.vl"
                 if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 204 "src/main.vl"
+#line 215 "src/main.vl"
                     sb_append_char((&(linker_sb)), ' ');
                 }
-#line 204 "src/main.vl"
+#line 215 "src/main.vl"
                 sb_append_str((&(linker_sb)), "-L");
-#line 204 "src/main.vl"
+#line 215 "src/main.vl"
                 const char* raw_path = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
-#line 204 "src/main.vl"
+#line 215 "src/main.vl"
                 sb_append_str((&(linker_sb)), quote_path(path_to_native_str(raw_path)));
             } else
-#line 205 "src/main.vl"
+#line 216 "src/main.vl"
             if ((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && velo_cmp_eq_u_s(((usize)strlen(target_path)), 0))) {
-#line 205 "src/main.vl"
+#line 216 "src/main.vl"
                 target_path = arg;
             }
-#line 206 "src/main.vl"
+#line 217 "src/main.vl"
             i += 1;
-            __loop_cont_867: __attribute__((unused));
+            __loop_cont_868: __attribute__((unused));
         }
-        __loop_break_867: __attribute__((unused));
-#line 208 "src/main.vl"
+        __loop_break_868: __attribute__((unused));
+#line 219 "src/main.vl"
         if (velo_cmp_eq_u_s(((usize)strlen(target_path)), 0)) {
-#line 208 "src/main.vl"
+#line 219 "src/main.vl"
             target_path = ".";
         }
-#line 209 "src/main.vl"
+#line 220 "src/main.vl"
         if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
-#line 210 "src/main.vl"
+#line 221 "src/main.vl"
             println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
-#line 211 "src/main.vl"
+#line 222 "src/main.vl"
             return 1;
         }
-#line 213 "src/main.vl"
+#line 224 "src/main.vl"
         if ((debug_mode && release_mode)) {
-#line 214 "src/main.vl"
+#line 225 "src/main.vl"
             println_str("[Velo Error] Cannot specify both --debug and --release");
-#line 215 "src/main.vl"
+#line 226 "src/main.vl"
             return 1;
         }
-#line 217 "src/main.vl"
+#line 228 "src/main.vl"
         const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
-#line 218 "src/main.vl"
+#line 229 "src/main.vl"
         if (unsafe_heap) {
-#line 219 "src/main.vl"
+#line 230 "src/main.vl"
             StringBuilder u_sb = create_sb((((usize)strlen(opt_flags)) + 32));
-#line 220 "src/main.vl"
+#line 231 "src/main.vl"
             sb_append_str((&(u_sb)), opt_flags);
-#line 220 "src/main.vl"
+#line 231 "src/main.vl"
             sb_append_str((&(u_sb)), " -DVELO_UNSAFE_HEAP");
-#line 220 "src/main.vl"
+#line 231 "src/main.vl"
             opt_flags = sb_to_string((&(u_sb)));
         }
-#line 222 "src/main.vl"
+#line 233 "src/main.vl"
         const char* linker_flags = sb_to_string((&(linker_sb)));
-#line 223 "src/main.vl"
+#line 234 "src/main.vl"
         int32_t rc = 0;
-#line 224 "src/main.vl"
+#line 235 "src/main.vl"
         {
             size_t __zone_wm_5 = velo_zone_push();
-#line 225 "src/main.vl"
+#line 236 "src/main.vl"
             rc = test_target_opts(target_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, no_line_directives);
             velo_zone_pop(__zone_wm_5);
         }
-#line 227 "src/main.vl"
+#line 238 "src/main.vl"
         return rc;
     }
-#line 230 "src/main.vl"
+#line 241 "src/main.vl"
     if (((cmd != NULL && "pkg" != NULL) ? (strcmp(cmd, "pkg") == 0) : (cmd == "pkg"))) {
-#line 231 "src/main.vl"
+#line 242 "src/main.vl"
         return handle_pkg_command(argc, ((const char**)(argv)), unsafe_index);
     }
-#line 234 "src/main.vl"
+#line 245 "src/main.vl"
     if (((cmd != NULL && "fmt" != NULL) ? (strcmp(cmd, "fmt") == 0) : (cmd == "fmt"))) {
-#line 235 "src/main.vl"
+#line 246 "src/main.vl"
         return handle_fmt_cmd(argc, ((const char**)(argv)));
     }
-#line 238 "src/main.vl"
+#line 249 "src/main.vl"
     println_str(velo_str_format("[Velo Error] Unknown command: '%s'. Run 'velo help' for usage.", (const char*)(cmd)));
-#line 239 "src/main.vl"
+#line 250 "src/main.vl"
     return 1;
     return 0;
 }
