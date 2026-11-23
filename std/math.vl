@@ -7,4 +7,5 @@ use "math/int.vl"
 use "math/checked.vl"
 use "math/float.vl"
 use "math/trig.vl"
+use "math/decimal.vl"
 

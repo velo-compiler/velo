@@ -2227,6 +2227,50 @@ Velo provides standard collection primitives with zero C runtime dependencies (`
   - `bheap_heapify(h: @RawBinaryHeap)`: Re-establishes the heap invariant bottom-up in $O(N)$.
   - `bheap_to_shelf(h: @RawBinaryHeap) -> RawShelf`: Converts raw heap buffer to a `RawShelf`.
 
+## 19. Fixed-Point Decimal Arithmetic Subsystem (`std.math.decimal`)
+
+Velo provides an exact base-10 fixed-point decimal arithmetic library (`std/math/decimal.vl`) with zero C runtime dependencies. It guarantees exact decimal representation ($0.1 + 0.2 == 0.3$), eliminating the binary representation artifacts of IEEE 754 floating point numbers for financial accounting, invoicing, taxation, and cent arithmetic.
+
+### 19.1 Representation & Scale
+
+A `Decimal` represents a base-10 rational number defined as $\text{units} \times 10^{-\text{scale}}$:
+- **`Decimal { units: i64, scale: u32 }`**: `units` holds the scaled 64-bit integer signed mantissa, and `scale` specifies the number of fractional decimal digits (from $0$ up to $18$).
+- **`dec_new(units: i64, scale: u32) -> Decimal`**: Constructs a decimal with explicit units and scale.
+- **`dec_from_i64(val: i64) -> Decimal`**: Constructs a decimal from an integer with scale 0.
+- **`dec_from_cents(cents: i64) -> Decimal`**: Constructs a decimal representing money in cents with scale 2.
+- **`dec_to_cents(d: Decimal, mode: u32) -> i64`**: Rescales decimal to scale 2 using the specified rounding mode and returns units in cents.
+
+### 19.2 Rounding Modes
+
+The subsystem implements all six standard financial and IEEE rounding modes:
+
+| Mode Constant | Value | Description |
+| :--- | :---: | :--- |
+| `ROUND_HALF_EVEN` | `0` | **Banker's rounding**: rounds to the nearest neighbor; ties resolve to the nearest even integer. Standard in financial accounting. |
+| `ROUND_HALF_UP` | `1` | **Arithmetic rounding**: rounds to the nearest neighbor; ties resolve away from zero ($+2.5 \to 3, -2.5 \to -3$). |
+| `ROUND_DOWN` | `2` | **Truncation**: rounds towards zero ($+2.9 \to 2, -2.9 \to -2$). |
+| `ROUND_UP` | `3` | **Away from zero**: rounds to the next magnitude ($+2.1 \to 3, -2.1 \to -3$). |
+| `ROUND_FLOOR` | `4` | **Towards $-\infty$**: rounds downwards ($+2.9 \to 2, -2.1 \to -3$). |
+| `ROUND_CEIL` | `5` | **Towards $+\infty$**: rounds upwards ($+2.1 \to 3, -2.9 \to -2$). |
+
+### 19.3 Arithmetic & Rescaling
+
+- **`dec_rescale(d: Decimal, new_scale: u32, mode: u32) -> Decimal`**: Converts a decimal to `new_scale`. Scale expansions are exact; scale reductions apply the specified rounding mode without intermediate floating-point conversions.
+- **`dec_add(a: Decimal, b: Decimal) -> Decimal`**: Adds two decimals, automatically aligning operands to the larger scale ($0.1 + 0.2 == 0.3$).
+- **`dec_sub(a: Decimal, b: Decimal) -> Decimal`**: Subtracts $b$ from $a$, aligning to the larger scale ($0.3 - 0.1 == 0.2$).
+- **`dec_mul(a: Decimal, b: Decimal) -> Decimal`**: Multiplies two decimals; result scale is $a.\text{scale} + b.\text{scale}$.
+- **`dec_div(a: Decimal, b: Decimal, target_scale: u32, mode: u32) -> Decimal`**: Divides $a$ by $b$, producing exact `target_scale` rounded according to `mode`.
+- **`dec_cmp(a: Decimal, b: Decimal) -> i32`**: Returns $-1$ if $a < b$, $0$ if $a == b$, and $+1$ if $a > b$, performing scale alignment.
+- **`dec_eq(a: Decimal, b: Decimal) -> bool`**: Returns `true` if $a == b$ numerically regardless of representation scale (e.g. `1.5 == 1.50`).
+- **`dec_lt`, `dec_lte`, `dec_gt`, `dec_gte`**: Standard relational comparisons.
+- **`dec_abs`, `dec_neg`, `dec_is_zero`, `dec_is_negative`**: Sign operations and predicates.
+
+### 19.4 Parsing & Formatting
+
+- **`dec_from_str(s: string) -> Decimal`**: Parses ASCII decimal strings with optional leading sign and fractional point (e.g. `"123.45"`, `"-0.05"`, `"+10"`, `".5"`).
+- **`dec_to_str(d: Decimal) -> string`**: Formats the decimal as a null-terminated heap string with exact fractional padding to `scale` digits (e.g. `dec_to_str(dec_from_cents(5)) == "0.05"`).
+
+
 
 
 

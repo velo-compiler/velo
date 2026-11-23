@@ -1,0 +1,228 @@
+// Unit test suite for std.math.decimal (pure Velo fixed-point decimal arithmetic).
+use "../../io/print.vl"
+use "../../math/decimal.vl"
+
+act test_basic_decimal() -> bool {
+    let d1 = dec_new(1234i64, 2 as u32)
+    if d1.units != 1234i64 or d1.scale != (2 as u32) { return false }
+    if dec_is_zero(d1) or dec_is_negative(d1) { return false }
+
+    let d_zero = dec_new(0i64, 0 as u32)
+    if !dec_is_zero(d_zero) or dec_is_negative(d_zero) { return false }
+
+    let d_neg = dec_new(-500i64, 2 as u32)
+    if dec_is_zero(d_neg) or !dec_is_negative(d_neg) { return false }
+
+    let d_abs = dec_abs(d_neg)
+    if d_abs.units != 500i64 or d_abs.scale != (2 as u32) { return false }
+
+    let d_negated = dec_neg(d1)
+    if d_negated.units != -1234i64 or d_negated.scale != (2 as u32) { return false }
+
+    // dec_from_i64
+    let d_int = dec_from_i64(42i64)
+    if d_int.units != 42i64 or d_int.scale != (0 as u32) { return false }
+
+    // dec_from_cents & dec_to_cents
+    let d_cents = dec_from_cents(1999i64)
+    if d_cents.units != 1999i64 or d_cents.scale != (2 as u32) { return false }
+    if dec_to_cents(d_cents, ROUND_HALF_EVEN) != 1999i64 { return false }
+
+    // dec_cmp & relational
+    let a = dec_from_str("1.5")
+    let b = dec_from_str("1.50")
+    let c = dec_from_str("1.51")
+    let d = dec_from_str("-1.5")
+
+    if dec_cmp(a, b) != 0 or !dec_eq(a, b) { return false }
+    if dec_cmp(a, c) >= 0 or !dec_lt(a, c) or !dec_lte(a, c) { return false }
+    if dec_cmp(c, a) <= 0 or !dec_gt(c, a) or !dec_gte(c, a) { return false }
+    if dec_cmp(d, a) >= 0 or !dec_lt(d, a) { return false }
+
+    return true
+}
+
+act test_exact_decimal_arithmetic() -> bool {
+    // 0.1 + 0.2 == 0.3 (in IEEE 754 float this fails: 0.1 + 0.2 = 0.30000000000000004)
+    let p1 = dec_from_str("0.1")
+    let p2 = dec_from_str("0.2")
+    let p3 = dec_from_str("0.3")
+
+    let sum = dec_add(p1, p2)
+    if sum.units != 3i64 or sum.scale != (1 as u32) { return false }
+    if !dec_eq(sum, p3) { return false }
+
+    // Subtraction: 0.3 - 0.1 == 0.2
+    let diff = dec_sub(p3, p1)
+    if diff.units != 2i64 or diff.scale != (1 as u32) { return false }
+    if !dec_eq(diff, p2) { return false }
+
+    // Subtraction with different scales: 1.000 - 0.025 == 0.975
+    let one = dec_from_str("1.000")
+    let frac = dec_from_str("0.025")
+    let diff2 = dec_sub(one, frac)
+    if diff2.units != 975i64 or diff2.scale != (3 as u32) { return false }
+    if !dec_eq(diff2, dec_from_str("0.975")) { return false }
+
+    // Multiplication: 0.2 * 0.3 == 0.06
+    let prod = dec_mul(p1, p2)
+    if prod.units != 2i64 or prod.scale != (2 as u32) { return false } // 0.1 * 0.2 = 0.02
+    if !dec_eq(prod, dec_from_str("0.02")) { return false }
+
+    let prod2 = dec_mul(dec_from_str("1.5"), dec_from_str("2.0"))
+    if prod2.units != 300i64 or prod2.scale != (2 as u32) { return false } // 3.00
+    if !dec_eq(prod2, dec_from_str("3.0")) { return false }
+
+    // Division: 10 / 4 == 2.50 at scale 2
+    let ten = dec_from_i64(10i64)
+    let four = dec_from_i64(4i64)
+    let div1 = dec_div(ten, four, 2 as u32, ROUND_HALF_EVEN)
+    if div1.units != 250i64 or div1.scale != (2 as u32) { return false }
+
+    // 1 / 3 at scale 4: 0.3333
+    let one_d = dec_from_i64(1i64)
+    let three_d = dec_from_i64(3i64)
+    let div2 = dec_div(one_d, three_d, 4 as u32, ROUND_HALF_EVEN)
+    if div2.units != 3333i64 or div2.scale != (4 as u32) { return false }
+
+    // 2 / 3 at scale 4: 0.6667 (rounded half up/even)
+    let two_d = dec_from_i64(2i64)
+    let div3 = dec_div(two_d, three_d, 4 as u32, ROUND_HALF_EVEN)
+    if div3.units != 6667i64 or div3.scale != (4 as u32) { return false }
+
+    return true
+}
+
+act test_cent_money_arithmetic() -> bool {
+    // Invoice computation:
+    // Item 1: 3 units @ $19.99 = $59.97
+    let item_price = dec_from_str("19.99")
+    let item_qty = dec_from_i64(3i64)
+    let subtotal = dec_mul(item_price, item_qty) // 5997, scale 2
+    if subtotal.units != 5997i64 or subtotal.scale != (2 as u32) { return false }
+
+    // Tax rate: 8.25% = 0.0825 (scale 4)
+    let tax_rate = dec_from_str("0.0825")
+    let raw_tax = dec_mul(subtotal, tax_rate) // 59.97 * 0.0825 = 4.947525 (scale 6, units 4947525)
+    if raw_tax.units != 4947525i64 or raw_tax.scale != (6 as u32) { return false }
+
+    // Round tax to cents using banker's rounding: 4.947525 -> $4.95 (495 cents)
+    let tax_cents = dec_to_cents(raw_tax, ROUND_HALF_EVEN)
+    if tax_cents != 495i64 { return false }
+    let tax_dec = dec_from_cents(tax_cents)
+
+    // Total with tax: $59.97 + $4.95 = $64.92
+    let total = dec_add(subtotal, tax_dec)
+    if total.units != 6492i64 or total.scale != (2 as u32) { return false }
+
+    // Split total across 3 parties: $64.92 / 3 = $21.64
+    let split = dec_div(total, dec_from_i64(3i64), 2 as u32, ROUND_HALF_EVEN)
+    if split.units != 2164i64 or split.scale != (2 as u32) { return false }
+
+    return true
+}
+
+act test_rounding_mode_matrix() -> bool {
+    // Test cases for midpoint ties:
+    // +2.5 -> scale 0
+    let p25 = dec_from_str("2.5")
+    if dec_rescale(p25, 0 as u32, ROUND_HALF_EVEN).units != 2i64 { return false } // 2 is even
+    if dec_rescale(p25, 0 as u32, ROUND_HALF_UP).units   != 3i64 { return false }
+    if dec_rescale(p25, 0 as u32, ROUND_DOWN).units      != 2i64 { return false }
+    if dec_rescale(p25, 0 as u32, ROUND_UP).units        != 3i64 { return false }
+    if dec_rescale(p25, 0 as u32, ROUND_FLOOR).units     != 2i64 { return false }
+    if dec_rescale(p25, 0 as u32, ROUND_CEIL).units      != 3i64 { return false }
+
+    // +3.5 -> scale 0
+    let p35 = dec_from_str("3.5")
+    if dec_rescale(p35, 0 as u32, ROUND_HALF_EVEN).units != 4i64 { return false } // 3 is odd -> 4
+    if dec_rescale(p35, 0 as u32, ROUND_HALF_UP).units   != 4i64 { return false }
+    if dec_rescale(p35, 0 as u32, ROUND_DOWN).units      != 3i64 { return false }
+    if dec_rescale(p35, 0 as u32, ROUND_UP).units        != 4i64 { return false }
+    if dec_rescale(p35, 0 as u32, ROUND_FLOOR).units     != 3i64 { return false }
+    if dec_rescale(p35, 0 as u32, ROUND_CEIL).units      != 4i64 { return false }
+
+    // -2.5 -> scale 0
+    let n25 = dec_from_str("-2.5")
+    if dec_rescale(n25, 0 as u32, ROUND_HALF_EVEN).units != -2i64 { return false } // -2 is even
+    if dec_rescale(n25, 0 as u32, ROUND_HALF_UP).units   != -3i64 { return false } // away from 0 -> -3
+    if dec_rescale(n25, 0 as u32, ROUND_DOWN).units      != -2i64 { return false } // towards 0 -> -2
+    if dec_rescale(n25, 0 as u32, ROUND_UP).units        != -3i64 { return false } // away from 0 -> -3
+    if dec_rescale(n25, 0 as u32, ROUND_FLOOR).units     != -3i64 { return false } // towards -inf -> -3
+    if dec_rescale(n25, 0 as u32, ROUND_CEIL).units      != -2i64 { return false } // towards +inf -> -2
+
+    // -3.5 -> scale 0
+    let n35 = dec_from_str("-3.5")
+    if dec_rescale(n35, 0 as u32, ROUND_HALF_EVEN).units != -4i64 { return false } // -3 is odd -> -4
+    if dec_rescale(n35, 0 as u32, ROUND_HALF_UP).units   != -4i64 { return false }
+    if dec_rescale(n35, 0 as u32, ROUND_DOWN).units      != -3i64 { return false }
+    if dec_rescale(n35, 0 as u32, ROUND_UP).units        != -4i64 { return false }
+    if dec_rescale(n35, 0 as u32, ROUND_FLOOR).units     != -4i64 { return false }
+    if dec_rescale(n35, 0 as u32, ROUND_CEIL).units      != -3i64 { return false }
+
+    // Non-tie values:
+    // +2.1 -> scale 0
+    let p21 = dec_from_str("2.1")
+    if dec_rescale(p21, 0 as u32, ROUND_HALF_EVEN).units != 2i64 { return false }
+    if dec_rescale(p21, 0 as u32, ROUND_HALF_UP).units   != 2i64 { return false }
+    if dec_rescale(p21, 0 as u32, ROUND_DOWN).units      != 2i64 { return false }
+    if dec_rescale(p21, 0 as u32, ROUND_UP).units        != 3i64 { return false }
+    if dec_rescale(p21, 0 as u32, ROUND_FLOOR).units     != 2i64 { return false }
+    if dec_rescale(p21, 0 as u32, ROUND_CEIL).units      != 3i64 { return false }
+
+    // -2.1 -> scale 0
+    let n21 = dec_from_str("-2.1")
+    if dec_rescale(n21, 0 as u32, ROUND_HALF_EVEN).units != -2i64 { return false }
+    if dec_rescale(n21, 0 as u32, ROUND_HALF_UP).units   != -2i64 { return false }
+    if dec_rescale(n21, 0 as u32, ROUND_DOWN).units      != -2i64 { return false }
+    if dec_rescale(n21, 0 as u32, ROUND_UP).units        != -3i64 { return false }
+    if dec_rescale(n21, 0 as u32, ROUND_FLOOR).units     != -3i64 { return false }
+    if dec_rescale(n21, 0 as u32, ROUND_CEIL).units      != -2i64 { return false }
+
+    return true
+}
+
+act test_parsing_and_formatting() -> bool {
+    let d1 = dec_from_str("123.45")
+    if d1.units != 12345i64 or d1.scale != (2 as u32) { return false }
+    let s1 = dec_to_str(d1)
+    if s1 != "123.45" { return false }
+
+    let d2 = dec_from_str("-0.05")
+    if d2.units != -5i64 or d2.scale != (2 as u32) { return false }
+    let s2 = dec_to_str(d2)
+    if s2 != "-0.05" { return false }
+
+    let d3 = dec_from_str("0.00")
+    if d3.units != 0i64 or d3.scale != (2 as u32) { return false }
+    let s3 = dec_to_str(d3)
+    if s3 != "0.00" { return false }
+
+    let d4 = dec_from_str("42")
+    if d4.units != 42i64 or d4.scale != (0 as u32) { return false }
+    let s4 = dec_to_str(d4)
+    if s4 != "42" { return false }
+
+    let d5 = dec_from_str("-100")
+    if d5.units != -100i64 or d5.scale != (0 as u32) { return false }
+    let s5 = dec_to_str(d5)
+    if s5 != "-100" { return false }
+
+    let d6 = dec_from_str(".5")
+    if d6.units != 5i64 or d6.scale != (1 as u32) { return false }
+    let s6 = dec_to_str(d6)
+    if s6 != "0.5" { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_basic_decimal() { return 1 }
+    if !test_exact_decimal_arithmetic() { return 2 }
+    if !test_cent_money_arithmetic() { return 3 }
+    if !test_rounding_mode_matrix() { return 4 }
+    if !test_parsing_and_formatting() { return 5 }
+
+    println_str("PASS: std.math.decimal tests succeeded")
+    return 0
+}

@@ -74,6 +74,14 @@ act main() -> i32 {
         return 18
     }
 
+    // 5. Fixed-point decimal arithmetic via use std.math
+    let d1 = dec_from_str("0.1")
+    let d2 = dec_from_str("0.2")
+    let d3 = dec_from_str("0.3")
+    if !dec_eq(dec_add(d1, d2), d3) {
+        return 19
+    }
+
     println_str("PASS: use std.math umbrella module verified")
     return 0
 }

@@ -1,0 +1,352 @@
+// Pure Velo fixed-point decimal arithmetic library (zero libc runtime dependencies).
+// Provides exact base-10 arithmetic, explicit scale, and standard financial rounding modes.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+
+// --- Rounding Modes ---
+view let ROUND_HALF_EVEN: u32 = 0 as u32 // Banker's rounding: nearest, ties to even
+view let ROUND_HALF_UP: u32   = 1 as u32 // Nearest, ties away from zero
+view let ROUND_DOWN: u32      = 2 as u32 // Towards zero (truncation)
+view let ROUND_UP: u32        = 3 as u32 // Away from zero
+view let ROUND_FLOOR: u32     = 4 as u32 // Towards -infinity
+view let ROUND_CEIL: u32      = 5 as u32 // Towards +infinity
+
+// Fixed-point decimal number: value = units * 10^(-scale).
+view data Decimal {
+    units: i64
+    scale: u32
+}
+
+// Returns 10^n for n in [0, 18].
+view act dec_pow10(n: u32) -> i64 {
+    if n == 0 as u32 { return 1i64 }
+    if n == 1 as u32 { return 10i64 }
+    if n == 2 as u32 { return 100i64 }
+    if n == 3 as u32 { return 1000i64 }
+    if n == 4 as u32 { return 10000i64 }
+    if n == 5 as u32 { return 100000i64 }
+    if n == 6 as u32 { return 1000000i64 }
+    if n == 7 as u32 { return 10000000i64 }
+    if n == 8 as u32 { return 100000000i64 }
+    if n == 9 as u32 { return 1000000000i64 }
+    if n == 10 as u32 { return 10000000000i64 }
+    if n == 11 as u32 { return 100000000000i64 }
+    if n == 12 as u32 { return 1000000000000i64 }
+    if n == 13 as u32 { return 10000000000000i64 }
+    if n == 14 as u32 { return 100000000000000i64 }
+    if n == 15 as u32 { return 1000000000000000i64 }
+    if n == 16 as u32 { return 10000000000000000i64 }
+    if n == 17 as u32 { return 100000000000000000i64 }
+    if n == 18 as u32 { return 1000000000000000000i64 }
+    return 0i64
+}
+
+// Internal integer division with explicit rounding mode.
+view act dec_round_div(num: i64, den: i64, mode: u32) -> i64 {
+    if den == 0i64 { return 0i64 }
+    let is_neg = (num < 0i64 and den > 0i64) or (num > 0i64 and den < 0i64)
+    let u_num = if num < 0i64 { -num } else { num }
+    let u_den = if den < 0i64 { -den } else { den }
+
+    let uq = u_num / u_den
+    let ur = u_num % u_den
+    if ur == 0i64 {
+        return if is_neg { -uq } else { uq }
+    }
+
+    mut inc_mag = false
+    let double_r = ur * 2i64
+
+    if !is_neg {
+        if mode == ROUND_DOWN or mode == ROUND_FLOOR {
+            inc_mag = false
+        } else if mode == ROUND_UP or mode == ROUND_CEIL {
+            inc_mag = true
+        } else if mode == ROUND_HALF_UP {
+            inc_mag = (double_r >= u_den)
+        } else if mode == ROUND_HALF_EVEN {
+            if double_r > u_den {
+                inc_mag = true
+            } else if double_r == u_den {
+                inc_mag = ((uq % 2i64) != 0i64)
+            }
+        }
+    } else {
+        if mode == ROUND_DOWN or mode == ROUND_CEIL {
+            inc_mag = false
+        } else if mode == ROUND_UP or mode == ROUND_FLOOR {
+            inc_mag = true
+        } else if mode == ROUND_HALF_UP {
+            inc_mag = (double_r >= u_den)
+        } else if mode == ROUND_HALF_EVEN {
+            if double_r > u_den {
+                inc_mag = true
+            } else if double_r == u_den {
+                inc_mag = ((uq % 2i64) != 0i64)
+            }
+        }
+    }
+
+    let final_mag = if inc_mag { uq + 1i64 } else { uq }
+    return if is_neg { -final_mag } else { final_mag }
+}
+
+// Creates a Decimal with given units and scale.
+view act dec_new(units: i64, scale: u32) -> Decimal {
+    return Decimal { units: units, scale: scale }
+}
+
+view act dec_from_i64(val: i64) -> Decimal {
+    return Decimal { units: val, scale: 0 as u32 }
+}
+
+view act dec_from_cents(cents: i64) -> Decimal {
+    return Decimal { units: cents, scale: 2 as u32 }
+}
+
+view act dec_is_zero(d: Decimal) -> bool {
+    return d.units == 0i64
+}
+
+view act dec_is_negative(d: Decimal) -> bool {
+    return d.units < 0i64
+}
+
+view act dec_abs(d: Decimal) -> Decimal {
+    let u = if d.units < 0i64 { -d.units } else { d.units }
+    return Decimal { units: u, scale: d.scale }
+}
+
+view act dec_neg(d: Decimal) -> Decimal {
+    return Decimal { units: -d.units, scale: d.scale }
+}
+
+// Rescales decimal to target new_scale using the specified rounding mode.
+view act dec_rescale(d: Decimal, new_scale: u32, mode: u32) -> Decimal {
+    if d.scale == new_scale { return d }
+    if new_scale > d.scale {
+        let diff = new_scale - d.scale
+        let factor = dec_pow10(diff)
+        return Decimal { units: d.units * factor, scale: new_scale }
+    }
+    let diff = d.scale - new_scale
+    let divisor = dec_pow10(diff)
+    let new_units = dec_round_div(d.units, divisor, mode)
+    return Decimal { units: new_units, scale: new_scale }
+}
+
+// Compares two decimals: returns -1 if a < b, 0 if a == b, 1 if a > b.
+view act dec_cmp(a: Decimal, b: Decimal) -> i32 {
+    if a.scale == b.scale {
+        if a.units < b.units { return -1 }
+        if a.units > b.units { return 1 }
+        return 0
+    }
+    let max_s = if a.scale > b.scale { a.scale } else { b.scale }
+    let a_aligned = dec_rescale(a, max_s, ROUND_DOWN)
+    let b_aligned = dec_rescale(b, max_s, ROUND_DOWN)
+    if a_aligned.units < b_aligned.units { return -1 }
+    if a_aligned.units > b_aligned.units { return 1 }
+    return 0
+}
+
+view act dec_eq(a: Decimal, b: Decimal) -> bool {
+    return dec_cmp(a, b) == 0
+}
+
+view act dec_lt(a: Decimal, b: Decimal) -> bool {
+    return dec_cmp(a, b) < 0
+}
+
+view act dec_lte(a: Decimal, b: Decimal) -> bool {
+    return dec_cmp(a, b) <= 0
+}
+
+view act dec_gt(a: Decimal, b: Decimal) -> bool {
+    return dec_cmp(a, b) > 0
+}
+
+view act dec_gte(a: Decimal, b: Decimal) -> bool {
+    return dec_cmp(a, b) >= 0
+}
+
+// Adds two decimals, aligning to the larger scale.
+view act dec_add(a: Decimal, b: Decimal) -> Decimal {
+    if a.scale == b.scale {
+        return Decimal { units: a.units + b.units, scale: a.scale }
+    }
+    let max_s = if a.scale > b.scale { a.scale } else { b.scale }
+    let a_al = dec_rescale(a, max_s, ROUND_DOWN)
+    let b_al = dec_rescale(b, max_s, ROUND_DOWN)
+    return Decimal { units: a_al.units + b_al.units, scale: max_s }
+}
+
+// Subtracts b from a, aligning to the larger scale.
+view act dec_sub(a: Decimal, b: Decimal) -> Decimal {
+    if a.scale == b.scale {
+        return Decimal { units: a.units - b.units, scale: a.scale }
+    }
+    let max_s = if a.scale > b.scale { a.scale } else { b.scale }
+    let a_al = dec_rescale(a, max_s, ROUND_DOWN)
+    let b_al = dec_rescale(b, max_s, ROUND_DOWN)
+    return Decimal { units: a_al.units - b_al.units, scale: max_s }
+}
+
+// Multiplies two decimals. Result scale is a.scale + b.scale.
+view act dec_mul(a: Decimal, b: Decimal) -> Decimal {
+    return Decimal { units: a.units * b.units, scale: a.scale + b.scale }
+}
+
+// Divides a by b, producing target_scale using the specified rounding mode.
+view act dec_div(a: Decimal, b: Decimal, target_scale: u32, mode: u32) -> Decimal {
+    if b.units == 0i64 {
+        return Decimal { units: 0i64, scale: target_scale }
+    }
+    let p_i64 = (b.scale as i64) - (a.scale as i64) + (target_scale as i64)
+    if p_i64 >= 0i64 {
+        let factor = dec_pow10(p_i64 as u32)
+        let num = a.units * factor
+        let q = dec_round_div(num, b.units, mode)
+        return Decimal { units: q, scale: target_scale }
+    } else {
+        let factor = dec_pow10((-p_i64) as u32)
+        let den = b.units * factor
+        let q = dec_round_div(a.units, den, mode)
+        return Decimal { units: q, scale: target_scale }
+    }
+}
+
+// Converts decimal to total cents (scale 2) using specified rounding mode.
+view act dec_to_cents(d: Decimal, mode: u32) -> i64 {
+    let c = dec_rescale(d, 2 as u32, mode)
+    return c.units
+}
+
+// Parses string like "123", "-45.67", "+0.5" into Decimal.
+view act dec_from_str(s: string) -> Decimal {
+    if s == null { return Decimal { units: 0i64, scale: 0 as u32 } }
+    let len = str.len(s)
+    if len == 0 { return Decimal { units: 0i64, scale: 0 as u32 } }
+
+    mut i: usize = 0
+    loop i < len and (s[i] == ' ' or s[i] == '\t') { i += 1 }
+    if i >= len { return Decimal { units: 0i64, scale: 0 as u32 } }
+
+    mut is_neg = false
+    if s[i] == '-' {
+        is_neg = true
+        i += 1
+    } else if s[i] == '+' {
+        i += 1
+    }
+
+    mut units: i64 = 0i64
+    mut scale: u32 = 0 as u32
+    mut seen_dot = false
+
+    loop i < len {
+        let c = s[i]
+        if c == '.' {
+            if seen_dot { break }
+            seen_dot = true
+        } else if c >= '0' and c <= '9' {
+            let digit = (c - '0') as i64
+            units = units * 10i64 + digit
+            if seen_dot {
+                scale += 1 as u32
+            }
+        } else {
+            break
+        }
+        i += 1
+    }
+
+    if is_neg { units = -units }
+    return Decimal { units: units, scale: scale }
+}
+
+// Formats Decimal as a heap-allocated null-terminated string.
+view act dec_to_str(d: Decimal) -> string {
+    let is_neg = d.units < 0i64
+    let u = if is_neg { -d.units } else { d.units }
+
+    // Estimate buffer size: 64 bytes is more than enough for 64-bit decimal
+    let buf = heap_alloc(64) as @u8
+    if buf == null { return "" }
+
+    if d.scale == 0 as u32 {
+        mut pos: usize = 0
+        if is_neg { buf[pos] = '-' as u8; pos += 1 }
+        if u == 0i64 {
+            buf[pos] = '0' as u8; pos += 1
+            buf[pos] = 0 as u8
+            return buf as string
+        }
+        mut tmp_digits: [24]u8
+        mut count: usize = 0
+        mut temp = u
+        loop temp > 0i64 {
+            let rem = (temp % 10i64) as u8
+            tmp_digits[count] = ('0' as u8) + rem
+            count += 1
+            temp /= 10i64
+        }
+        loop count > 0 {
+            count -= 1
+            buf[pos] = tmp_digits[count]
+            pos += 1
+        }
+        buf[pos] = 0 as u8
+        return buf as string
+    }
+
+    let p = dec_pow10(d.scale)
+    let int_part = u / p
+    let frac_part = u % p
+
+    mut pos: usize = 0
+    if is_neg { buf[pos] = '-' as u8; pos += 1 }
+
+    // Format int_part
+    if int_part == 0i64 {
+        buf[pos] = '0' as u8; pos += 1
+    } else {
+        mut tmp_digits: [24]u8
+        mut count: usize = 0
+        mut temp = int_part
+        loop temp > 0i64 {
+            let rem = (temp % 10i64) as u8
+            tmp_digits[count] = ('0' as u8) + rem
+            count += 1
+            temp /= 10i64
+        }
+        loop count > 0 {
+            count -= 1
+            buf[pos] = tmp_digits[count]
+            pos += 1
+        }
+    }
+
+    buf[pos] = '.' as u8; pos += 1
+
+    // Format frac_part padded to d.scale digits
+    mut frac_digits: [24]u8
+    mut ftemp = frac_part
+    mut d_idx = d.scale as usize
+    loop d_idx > 0 {
+        d_idx -= 1
+        let rem = (ftemp % 10i64) as u8
+        frac_digits[d_idx] = ('0' as u8) + rem
+        ftemp /= 10i64
+    }
+    mut k: usize = 0
+    loop k < (d.scale as usize) {
+        buf[pos] = frac_digits[k]
+        pos += 1
+        k += 1
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}

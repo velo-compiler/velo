@@ -2627,9 +2627,29 @@ a property test against a Python reference for a random operation sequence.
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (all <= 400).
   - Bootstrap chain determinism verified: Gen2 and Gen3 emit identical `bootstrap.c`.
 
-**78.9** `std/math/decimal.vl`: fixed-point decimal with explicit scale and
+**78.9** [COMPLETED] ✅ `std/math/decimal.vl`: fixed-point decimal with explicit scale and
 rounding modes, for money. Test: cent arithmetic, `0.1 + 0.2 == 0.3` in
 decimal, rounding-mode matrix.
+- *Former Defect:*
+  Velo standard library lacked fixed-point decimal arithmetic, forcing applications dealing with currency, invoicing, and financial accounting to either rely on binary floating-point (`f64`/`f32`) with representation rounding errors (e.g. `0.1 + 0.2 != 0.3`), or hand-roll ad-hoc integer scaling without standard IEEE/banker's rounding modes.
+- *Fix Applied:*
+  - Implemented `std/math/decimal.vl`: Pure Velo fixed-point decimal number representation (`Decimal { units: i64, scale: u32 }`) supporting scales $0$ through $18$ and base-10 integer mantissa.
+  - Implemented all 6 standard rounding modes: `ROUND_HALF_EVEN` (Banker's rounding to nearest even neighbor), `ROUND_HALF_UP` (arithmetic nearest tie-away-from-zero), `ROUND_DOWN` (truncation), `ROUND_UP` (away from zero), `ROUND_FLOOR` (towards $-\infty$), and `ROUND_CEIL` (towards $+\infty$).
+  - Implemented exact arithmetic operations: `dec_add` and `dec_sub` (with automatic scale alignment), `dec_mul` ($a.\text{scale} + b.\text{scale}$), `dec_div` (division with target scale and explicit rounding mode), and `dec_rescale`.
+  - Implemented relational and sign operations: `dec_cmp`, `dec_eq`, `dec_lt`, `dec_lte`, `dec_gt`, `dec_gte`, `dec_abs`, `dec_neg`, `dec_is_zero`, `dec_is_negative`.
+  - Implemented ASCII string parsing (`dec_from_str`) and formatting (`dec_to_str`) with zero-padded fractional parts.
+  - Implemented money helpers: `dec_from_cents` and `dec_to_cents` with rounding mode.
+  - Re-exported `decimal.vl` via `std/math.vl` umbrella module.
+  - Created pure Velo test suite `std/tests/math/decimal_test.vl` covering exact decimal addition (`0.1 + 0.2 == 0.3`), invoice cent arithmetic, string round-trips, and exhaustive rounding-mode matrix across positive/negative ties ($+2.5, +3.5, -2.5, -3.5$) and non-ties.
+  - Added pytest tests and property tests in `tests/test_std_math.py` asserting exact numerical parity against Python's `decimal.Decimal` module across all operations and rounding modes.
+  - Documented Section 19 in `docs/SPECIFICATION.md`.
+- *Residual Limitation:*
+  Mantissa is represented by a 64-bit signed integer (`i64`), bounding the maximum absolute scaled value to $9,223,372,036,854,775,807 \times 10^{-\text{scale}}$ (e.g. over 90 trillion dollars at scale 2); calculations requiring arbitrary precision beyond 18 significant digits should use an arbitrary-precision big-integer backend.
+- *Verification:*
+  - `bin/velo.exe run std/tests/math/decimal_test.vl`: passed (`PASS: std.math.decimal tests succeeded`).
+  - `bin/velo.exe run std/tests/math_module_import_test.vl`: passed (`PASS: use std.math umbrella module verified`).
+  - `python -m pytest tests/test_std_math.py -v`: 7 passed in 10.93s (including property tests).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/math/decimal.vl` is 352 lines (all <= 400).
 
 ## Phase Exit Criteria
 
