@@ -3163,9 +3163,27 @@ becomes generated and is regenerated in CI (or on a schedule).
     - JSON Workload: `active=35000, age=1170000, score=3110000`.
     - File Scan Workload: `lines=76931, words=285222, bytes=3259543`.
 
-**81.2** Add C, Rust, and Go peers for the HTTP workload, plus a JSON parse
+**81.2 [COMPLETED] ✅** Add C, Rust, and Go peers for the HTTP workload, plus a JSON parse
 workload and a file-scanning workload (the actual intended use cases from
 Section 1's positioning).
+
+- *Former Defect:*
+  The project lacked apples-to-apples implementations in peer systems languages (C, Rust, Go) for Velo's core positioning use cases. Benchmark comparisons were exclusively restricted to Node.js HTTP throughput, with zero comparators for file processing or JSON data pipelines, leaving performance and efficiency claims across real workloads ungrounded.
+- *Fix Applied:*
+  - Implemented 15 peer benchmarks covering all 3 workloads across Velo, C (GCC 16.1 -O3), Rust (rustc -O), Go (go build), and Node.js:
+    - **HTTP Workload**: `server_velo.vl`, `server_c.c`, `server_rust.rs`, `server_go.go`, `server_node.js` serving `/plaintext` and `/json` endpoints under concurrent load.
+    - **JSON Parsing & Aggregation Workload**: `json_velo.vl`, `json_c.c`, `json_rust.rs`, `json_go.go`, `json_node.js` parsing structured records and computing filtered aggregations.
+    - **File Scanning & Word Count Workload**: `filescan_velo.vl`, `filescan_c.c`, `filescan_rust.rs`, `filescan_go.go`, `filescan_node.js` processing large text (`bootstrap.c`).
+  - Standardized output contracts ensuring 100% exact parity across all 5 implementations.
+  - Added regression test suite `tests/test_benchmark_peers.py` validating peer source file completeness, file scanning count parity, JSON aggregation parity, and live HTTP endpoint responses for all servers.
+- *Residual Limitation:*
+  Compiler compile-time speed measurement and regression tracking belong to Task 81.3.
+- *Verification:*
+  - `python -m pytest tests/test_benchmark_peers.py -v`: 4 passed in 4.43s.
+  - Verified bit-exact output parity across all 5 languages:
+    - File scan: `lines=76931, words=285222, bytes=3259543`.
+    - JSON parse: `active=7000, age=234000, score=622000` (1000 iters), `active=35000, age=1170000, score=3110000` (5000 iters).
+    - HTTP server: verified 200 OK and expected payloads on `/plaintext` and `/json` for Velo, C, Rust, Go, Node.
 
 **81.3** Add `benchmark/compile_speed.py`: measure clean and incremental
 `velo build src/main.vl` time, track it per commit, and fail CI on a >20%
