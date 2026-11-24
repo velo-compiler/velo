@@ -111,6 +111,13 @@ export function App() {
     const cleanSlug = slug.includes('#') ? slug.split('#')[0] : slug;
     const targetAnchor = slug.includes('#') ? slug.split('#')[1] : null;
 
+    if (cleanSlug.startsWith('stdlib') || cleanSlug === 'stdlib-catalog-az') {
+      setCurrentView('stdlib');
+      window.location.hash = targetAnchor ? `stdlib#${targetAnchor}` : 'stdlib';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     const page = findDocPageBySlug(cleanSlug);
     if (page) {
       setCurrentDocPage(page);
@@ -160,7 +167,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0B0F17] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="min-h-screen flex flex-col bg-[#090b10] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
       {/* Header */}
       <Header
         currentView={currentView}

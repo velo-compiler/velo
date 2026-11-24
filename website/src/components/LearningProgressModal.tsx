@@ -32,55 +32,55 @@ export const LearningProgressModal: React.FC<LearningProgressModalProps> = ({
   const nextLesson = allPages.find(p => !completedSlugs.has(p.slug));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
       <div 
-        className="w-full max-w-2xl bg-[#0D1117] border border-slate-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+        className="w-full max-w-2xl bg-[#0f121a] border border-white/[0.1] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="px-6 py-4.5 bg-[#161B22] border-b border-slate-800 flex items-center justify-between">
+        <div className="px-6 py-4 bg-[#161b26] border-b border-white/[0.08] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <Award className="w-5 h-5 text-emerald-400" />
-            <h3 className="text-base font-bold text-white font-sans">
-              Learning Path Progress
+            <Award className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-semibold text-white font-sans">
+              Documentation Progress
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+            className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Progress Overview Bar */}
-        <div className="px-6 py-5 bg-[#0A0D13] border-b border-slate-800/80 space-y-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-300 font-medium">Curriculum Completion</span>
-            <span className="text-emerald-400 font-bold font-mono text-base">
+        <div className="px-6 py-5 bg-[#090b10] border-b border-white/[0.08] space-y-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-300 font-medium">Curriculum completion</span>
+            <span className="text-emerald-400 font-mono">
               {completedCount} / {totalCount} lessons ({percent}%)
             </span>
           </div>
 
-          <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+          <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all duration-300"
+              className="h-full bg-emerald-400 transition-all duration-300"
               style={{ width: `${percent}%` }}
             />
           </div>
 
           {nextLesson && (
-            <div className="pt-2 flex items-center justify-between">
-              <span className="text-xs text-slate-400">Next suggested lesson:</span>
+            <div className="pt-1 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">Next suggested lesson:</span>
               <button
                 onClick={() => {
                   onSelectPage(nextLesson.slug);
                   onClose();
                 }}
-                className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1.5 transition-colors"
+                className="text-xs text-slate-200 hover:text-white font-medium flex items-center gap-1.5 transition-colors"
               >
                 <span>{nextLesson.title}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
+                <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
               </button>
             </div>
           )}

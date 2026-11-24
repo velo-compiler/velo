@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Archive, 
   Search, 
@@ -20,6 +20,22 @@ export const StdlibPage: React.FC = () => {
   const [selectedTier, setSelectedTier] = useState<'all' | '1' | '2'>('all');
   const [selectedModule, setSelectedModule] = useState<StdlibModule>(STDLIB_MODULES[0]);
   const [copiedSig, setCopiedSig] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash;
+      if (hash.includes('#std.') || hash.startsWith('#std.')) {
+        const modName = hash.split('#').pop() || '';
+        const found = STDLIB_MODULES.find(m => m.name === modName);
+        if (found) {
+          setSelectedModule(found);
+        }
+      }
+    };
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   const filteredModules = STDLIB_MODULES.filter(m => {
     const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
