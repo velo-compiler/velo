@@ -15,9 +15,9 @@
 ## 📊 High-Level Release Status
 
 - **Current Baseline:** Self-hosted native compiler (`2.0.0-pre`, Stage 2 canonical).
-- **Phase Completion:** **14/16 Phases Closed** (88%).
-- **Task Execution:** **91/97 Tasks Delivered** (94%).
-- **Open / Active Phases:** 2 (Phase 76, Phase 85).
+- **Phase Completion:** **15/16 Phases Closed** (94%).
+- **Task Execution:** **95/101 Tasks Delivered** (94%).
+- **Open / Active Phases:** 1 (Phase 76).
 
 ---
 
@@ -53,7 +53,7 @@
 | **82** | Compiler Robustness and Fuzzing | `P1` | ✅ **Closed** | 5/5 | 100% |
 | **83** | Documentation and Claims Integrity | `P1` | ✅ **Closed** | 6/6 | 100% |
 | **84** | Ecosystem, Governance, Showcase | `P2` | ✅ **Closed** | 5/5 | 100% |
-| **85** | Recorded Residual Limitations | `P2` | ⏳ **Open** | 0/0 | 0% |
+| **85** | Recorded Residual Limitations | `P2` | ✅ **Closed** | 4/4 | 100% |
 
 ---
 
@@ -91,33 +91,6 @@
 
 ---
 
-### Phase 85: Recorded Residual Limitations (`P2`)
-**Current Status:** `OPEN`
-
-**Goal & Scope:**
-> Honest, low-severity items that are known and deliberately deferred. They are listed so they are not rediscovered as surprises.
-
-**Recorded Residual Limitations:**
-| Item | Evidence | Residual risk | Close condition |
-| :--- | :--- | :--- | :--- |
-| CI exists as a workflow, not as a record of execution | no remote (`git remote -v` empty); every row in `docs/CI_STATUS.md` reads "not yet"; `test_every_declared_job_has_evidence` is strict-xfail | A reviewer cannot tell a green CI from an unrun one by looking at the repo alone - mitigated by `docs/CI_STATUS.md` stating "no run has executed" and by the strict xfail | One green run per declared job, recorded in `docs/CI_STATUS.md` (Phase 76.1) |
-| ASan/UBSan unverifiable on the maintainer host | sanitizer libs absent locally; `.github/workflows/ci.yml` sanitizer lane unproven | Memory bugs can ship unnoticed | One green full-suite sanitizer run committed (Phase 74.6) |
-| `velo_check_capture.tmp` fixed CWD filename | fixed in 76.4: `check_capture_path()` embeds the pid (`src/backend/check.vl`) | Concurrent `velo check` is safe per process; not per thread | None for the CLI; a thread-safe variant needs the capture global made reentrant |
-| Windows and MSVC lanes never executed | `windows-gcc` and `windows-msvc` jobs are structurally tested, but no run exists | The MSVC backend is verified locally for 2 of 132 modules; a full-suite MSVC run may surface genuine backend defects on first execution | First green `windows-msvc` run (Phase 76.1) |
-| `fast` tier membership is opt-in and could drift | `pytestmark = pytest.mark.fast` in 5 modules; `slow` inferred by source heuristic | A module that starts invoking the compiler while still marked `fast` slows the push lane; the heuristic cannot detect that because `fast` short-circuits it | Reviewed by `test_fast_job_runs_only_the_fast_lane` at the job level; per-module honesty is a review responsibility |
-| 400-line ceiling forces sliver modules | 40+ files under 150 lines in `src/analysis`/`src/backend` | Concept fragmentation, duplicated header contracts | Phase 80.4 (ceiling becomes a consequence, not a constraint) |
-| Frozen Stage-1 Python compiler still in the build story | `AGENTS.md`, `examples/12_stage2_semantics_test.vl` | Double maintenance, false parity signal | Phase 80.5 |
-| `bootstrap.c` is a 2.3 MB generated artifact in review | 67,952 lines | Compiler diffs are unreviewable at the artifact level | Phase 80.6 budget warning + Phase 76 tiering |
-| `std/async` is `poll(2)` on Linux | `std/async/poller_linux.vl:13` | O(n) wakeup scaling | Phase 70.4 (`epoll`) |
-| Overlapping `mem.copy`/`mem.set` remain C UB | `docs/gaps_archive.md:181` | Silent corruption on aliased buffers | Phase 74.4 [COMPLETED] ✅ |
-| No `Set`/`Deque`/priority queue | `std/coll/` inventory | Users hand-roll them, inconsistently | Phase 78.8 [COMPLETED] ✅ |
-| `defer` takes a block, not an expression | Phase 58/69 semantics | Verbose cleanup sites | Phase 77.6 |
-| No `v2.0.0-pre` tag was published anywhere | tag exists locally; no remote configured | A consumer cannot pin the release commit | Add a remote and push tags (Phase 84) |
-| Release archive cannot be used without a C compiler | `scripts/release.py` ships `velo.exe` + sources, no prebuilt library triple | Consumers on compiler-less hosts are unsupported by design | Documented in Phase 71's residual limitation; revisit with Phase 70's platform set |
-| `emit-c` output depends on how the source path is spelled | `src/backend/codegen_line.vl:6-17` embeds the path in `#line` | A build driven from an absolute path produces a byte-different snapshot | Pinned by `tests/test_release_script.py`; normalizing paths is Phase 79 (reproducible-build work) |
-
----
-
 ## 📦 Completed Milestone Archives
 
 The following foundational phases have completed their audit contracts and shipped with full regression verification:
@@ -136,6 +109,7 @@ The following foundational phases have completed their audit contracts and shipp
 - **Phase 82 (Compiler Robustness and Fuzzing — `P1`):** Delivered 5 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
 - **Phase 83 (Documentation and Claims Integrity — `P1`):** Delivered 6 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
 - **Phase 84 (Ecosystem, Governance, Showcase — `P2`):** Delivered 5 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
+- **Phase 85 (Recorded Residual Limitations — `P2`):** Delivered 4 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
 
 ---
 
