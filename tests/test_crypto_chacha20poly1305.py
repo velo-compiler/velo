@@ -1,7 +1,9 @@
 import os
 import subprocess
-import pytest
 from pathlib import Path
+import pytest
+
+pytest.importorskip("cryptography")
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from conftest import cc_dir, velo_exe
 

@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pyyaml
+          pip install pytest pyyaml cryptography
 
       - name: Verify roadmap freshness
         run: |
@@ -56,7 +56,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pyyaml cryptography
 
       - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
         run: |
@@ -100,7 +100,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pyyaml cryptography
 
       - name: Install Clang (if selected)
         if: matrix.compiler == 'clang'
@@ -150,7 +150,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pyyaml cryptography
 
       - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
         env:
@@ -198,7 +198,7 @@ jobs:
       - name: Install Python test runner
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pyyaml cryptography
 
       - name: Add MSYS2 UCRT64 to PATH
         shell: bash
@@ -245,7 +245,7 @@ jobs:
       - name: Install Python test runner
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pyyaml cryptography
 
       - name: Bootstrap Velo compiler with MSVC
         shell: cmd
@@ -292,7 +292,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pyyaml cryptography
 
       # Phase 67: the suite must pass with no untracked directory present.
       # Eight Velo tests used to write into a relative `scratch/` without
@@ -347,7 +347,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install pytest pyyaml cryptography
 
       - name: Install Clang and Sanitizer runtimes
         run: |
