@@ -20,7 +20,6 @@ def run_velo(args, cwd=None):
     return res
 
 
-@pytest.mark.fast
 def test_module_aliasing_qualified_call():
     """`use "math.vl" :> m` allows calling `m.add()`."""
     with tempfile.TemporaryDirectory() as td:
@@ -42,7 +41,6 @@ def test_module_aliasing_qualified_call():
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
 
 
-@pytest.mark.fast
 def test_module_aliasing_blocks_bare_call():
     """`use "math.vl" :> m` blocks calling `add()` bare."""
     with tempfile.TemporaryDirectory() as td:
@@ -66,7 +64,6 @@ def test_module_aliasing_blocks_bare_call():
         assert "use 'm.add'" in combined
 
 
-@pytest.mark.fast
 def test_selective_import_allowed_and_blocked():
     """`use "calc.vl" :> { add }` allows `add()` and blocks unlisted `sub()`."""
     with tempfile.TemporaryDirectory() as td:
@@ -103,7 +100,6 @@ def test_selective_import_allowed_and_blocked():
         assert "'sub' is not imported from 'calc.vl'" in combined
 
 
-@pytest.mark.fast
 def test_selective_import_with_renaming():
     """`use "calc.vl" :> { add :> calc_add }` renames `add` to `calc_add`."""
     with tempfile.TemporaryDirectory() as td:
@@ -136,7 +132,6 @@ def test_selective_import_with_renaming():
         assert res_bad.returncode != 0
 
 
-@pytest.mark.fast
 def test_selective_import_struct():
     """`use "types.vl" :> { Point }` selectively imports struct `Point`."""
     with tempfile.TemporaryDirectory() as td:
@@ -173,7 +168,6 @@ def test_selective_import_struct():
         assert "'Color' is not imported from 'types.vl'" in combined
 
 
-@pytest.mark.fast
 def test_selective_import_struct_with_rename():
     """`use "types.vl" :> { Point :> Coord }` renames `Point` to `Coord`."""
     with tempfile.TemporaryDirectory() as td:
@@ -195,7 +189,6 @@ def test_selective_import_struct_with_rename():
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
 
 
-@pytest.mark.fast
 def test_module_aliasing_global_variable():
     """`use "config.vl" :> cfg` allows accessing `cfg.MAX_SIZE`."""
     with tempfile.TemporaryDirectory() as td:
@@ -231,7 +224,6 @@ def test_module_aliasing_global_variable():
         assert "'MAX_SIZE' is not imported into" in combined
 
 
-@pytest.mark.fast
 def test_invalid_colon_gt_syntax_rejected():
     """Invalid token after `:>` is rejected with syntax error."""
     with tempfile.TemporaryDirectory() as td:
@@ -247,7 +239,6 @@ def test_invalid_colon_gt_syntax_rejected():
         assert "Expected alias identifier or '{' after ':>'" in combined
 
 
-@pytest.mark.fast
 def test_multiple_module_aliases():
     """Multiple modules can be imported under distinct aliases."""
     with tempfile.TemporaryDirectory() as td:
@@ -274,7 +265,6 @@ def test_multiple_module_aliases():
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
 
 
-@pytest.mark.fast
 def test_selective_import_multiple_renames():
     """Multiple items in selective import list can each be renamed."""
     with tempfile.TemporaryDirectory() as td:
@@ -296,7 +286,6 @@ def test_selective_import_multiple_renames():
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
 
 
-@pytest.mark.fast
 def test_selective_import_struct_annotation_and_param():
     """Renamed struct type used in variable annotation and function parameter."""
     with tempfile.TemporaryDirectory() as td:

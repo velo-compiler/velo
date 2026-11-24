@@ -25,8 +25,6 @@ from pathlib import Path
 import pytest
 from conftest import cc_dir, velo_exe
 
-pytestmark = pytest.mark.fast
-
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 VELO_EXE = velo_exe()
 CORPUS_DIR = REPO_ROOT / "tests" / "fuzz" / "corpus"

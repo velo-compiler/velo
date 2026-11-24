@@ -15,8 +15,6 @@ from pathlib import Path
 import pytest
 from conftest import velo_exe
 
-pytestmark = pytest.mark.fast
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SPEC_FILE = REPO_ROOT / "docs" / "SPECIFICATION.md"
 TOKEN_FILE = REPO_ROOT / "src" / "frontend" / "token.vl"

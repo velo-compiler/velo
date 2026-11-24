@@ -14,8 +14,6 @@ import subprocess
 import pytest
 from conftest import velo_exe, REPO_ROOT
 
-pytestmark = pytest.mark.fast
-
 VELO_EXE = velo_exe()
 
 

@@ -21,7 +21,6 @@ def run_velo(args, cwd=None):
     return res
 
 
-@pytest.mark.fast
 def test_view_act_accessible_across_modules():
     with tempfile.TemporaryDirectory() as td:
         mod_file = Path(td) / "math_lib.vl"
@@ -43,7 +42,6 @@ def test_view_act_accessible_across_modules():
         assert res.returncode == 0, f"Expected success, got stderr: {res.stderr}\nstdout: {res.stdout}"
 
 
-@pytest.mark.fast
 def test_private_act_blocked_from_other_modules():
     with tempfile.TemporaryDirectory() as td:
         mod_file = Path(td) / "math_lib.vl"
@@ -67,7 +65,6 @@ def test_private_act_blocked_from_other_modules():
         assert "'internal_secret' is private to 'math_lib.vl' and cannot be accessed from 'main.vl'" in combined
 
 
-@pytest.mark.fast
 def test_private_act_accessible_within_defining_file():
     with tempfile.TemporaryDirectory() as td:
         mod_file = Path(td) / "math_lib.vl"
@@ -88,7 +85,6 @@ def test_private_act_accessible_within_defining_file():
         assert res.returncode == 0, f"Expected success, got stderr: {res.stderr}\nstdout: {res.stdout}"
 
 
-@pytest.mark.fast
 def test_view_data_struct_and_privacy():
     with tempfile.TemporaryDirectory() as td:
         mod_file = Path(td) / "types.vl"
@@ -123,7 +119,6 @@ def test_view_data_struct_and_privacy():
         assert "'PrivateConfig' is private to 'types.vl' and cannot be accessed from 'main_err.vl'" in combined
 
 
-@pytest.mark.fast
 def test_view_kind_and_privacy():
     with tempfile.TemporaryDirectory() as td:
         mod_file = Path(td) / "kinds.vl"
@@ -164,7 +159,6 @@ def test_view_kind_and_privacy():
         assert "'PrivateState' is private to 'kinds.vl' and cannot be accessed from 'main_err.vl'" in combined
 
 
-@pytest.mark.fast
 def test_view_pact_and_privacy():
     with tempfile.TemporaryDirectory() as td:
         mod_file = Path(td) / "contracts.vl"
@@ -214,7 +208,6 @@ def test_view_pact_and_privacy():
         assert "'PrivatePact' is private to 'contracts.vl' and cannot be accessed from 'main_err.vl'" in combined
 
 
-@pytest.mark.fast
 def test_view_global_variable_and_privacy():
     with tempfile.TemporaryDirectory() as td:
         mod_file = Path(td) / "globals.vl"
@@ -248,7 +241,6 @@ def test_view_global_variable_and_privacy():
         assert "'PRIVATE_MAGIC' is private to 'globals.vl' and cannot be accessed from 'main_err.vl'" in combined
 
 
-@pytest.mark.fast
 def test_view_cannot_be_applied_to_use_or_test():
     with tempfile.TemporaryDirectory() as td:
         f_use = Path(td) / "bad_use.vl"

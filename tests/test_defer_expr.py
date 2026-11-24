@@ -19,7 +19,6 @@ def run_velo(args, cwd=None):
     return res
 
 
-@pytest.mark.fast
 def test_expression_defer_single_call():
     """`defer func(arg)` executes at function exit."""
     with tempfile.TemporaryDirectory() as td:
@@ -43,7 +42,6 @@ def test_expression_defer_single_call():
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
 
 
-@pytest.mark.fast
 def test_expression_defer_lifo_order():
     """Multiple expression defers run in LIFO order."""
     with tempfile.TemporaryDirectory() as td:
@@ -69,7 +67,6 @@ def test_expression_defer_lifo_order():
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
 
 
-@pytest.mark.fast
 def test_expression_defer_mixed_with_block_defer():
     """Expression defers and block defers interleave in exact LIFO order."""
     with tempfile.TemporaryDirectory() as td:
@@ -97,7 +94,6 @@ def test_expression_defer_mixed_with_block_defer():
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
 
 
-@pytest.mark.fast
 def test_expression_defer_on_early_return():
     """Expression defer runs on early return."""
     with tempfile.TemporaryDirectory() as td:
@@ -125,7 +121,6 @@ def test_expression_defer_on_early_return():
         assert res.returncode == 0, f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
 
 
-@pytest.mark.fast
 def test_expression_defer_rejects_transfer():
     """`defer return`, `defer break`, `defer continue` are rejected."""
     with tempfile.TemporaryDirectory() as td:
