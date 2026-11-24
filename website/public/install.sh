@@ -9,7 +9,11 @@ echo "  ⚡ Velo Systems Language Installer (v2.0 Native)"
 echo "  Code at high velocity."
 echo ""
 
-SERVER_URL="${VELO_INSTALL_URL:-http://localhost:5173}"
+SERVER_URL="${VELO_INSTALL_URL:-https://velo-compiler.github.io/velo}"
+SERVER_URL="${SERVER_URL%/}"
+if [ "$SERVER_URL" = "https://velo-compiler.github.io" ]; then
+    SERVER_URL="https://velo-compiler.github.io/velo"
+fi
 VELO_HOME="$HOME/.velo"
 TARGET_DIR="$VELO_HOME/bin"
 TARGET_BIN="$TARGET_DIR/velo"

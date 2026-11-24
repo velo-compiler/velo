@@ -39,17 +39,19 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate, onSelectDocPage 
   // 3D Voxel Engine Canvas State
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Origin for quickstart script
+  // Base URL for quickstart script
   const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'http://localhost:5173';
+  const pathname = typeof window !== 'undefined' && window.location.pathname ? window.location.pathname.replace(/\/+$/, '') : '';
   const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+  const installBase = isLocalhost ? origin : (origin.includes('github.io') && !pathname.includes('/velo') ? `${origin}/velo` : `${origin}${pathname}`);
 
   const installCommands = {
     powershell: isLocalhost 
       ? `irm ${origin}/install.ps1 | iex` 
-      : `$env:VELO_INSTALL_URL='${origin}'; irm ${origin}/install.ps1 | iex`,
+      : `$env:VELO_INSTALL_URL='${installBase}'; irm ${installBase}/install.ps1 | iex`,
     bash: isLocalhost
       ? `curl -fsSL ${origin}/install.sh | bash`
-      : `VELO_INSTALL_URL='${origin}' curl -fsSL ${origin}/install.sh | bash`,
+      : `VELO_INSTALL_URL='${installBase}' curl -fsSL ${installBase}/install.sh | bash`,
     source: 'git clone https://github.com/velo-compiler/velo.git && cd velo && scripts\\bootstrap.bat'
   };
 

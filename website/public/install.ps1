@@ -14,9 +14,12 @@ Write-Host "  Code at high velocity." -ForegroundColor Gray
 Write-Host ""
 
 # Determine Host Server URL
-$serverUrl = "http://localhost:5173"
+$serverUrl = "https://velo-compiler.github.io/velo"
 if ($env:VELO_INSTALL_URL) {
-    $serverUrl = $env:VELO_INSTALL_URL
+    $serverUrl = $env:VELO_INSTALL_URL.TrimEnd('/')
+}
+if ($serverUrl -eq "https://velo-compiler.github.io") {
+    $serverUrl = "https://velo-compiler.github.io/velo"
 }
 
 $veloHome = Join-Path $HOME ".velo"
