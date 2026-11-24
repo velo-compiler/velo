@@ -32,6 +32,24 @@ $targetRuntime = Join-Path $veloHome "runtime"
 $downloadExeUrl = "$serverUrl/velo.exe"
 $downloadStdUrl = "$serverUrl/velo-std.zip"
 
+function Download-AssetFile($url, $destination) {
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $destination -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+        if ((Test-Path $destination) -and ((Get-Item $destination).Length -gt 0)) {
+            return $true
+        }
+    } catch {}
+    try {
+        $wc = New-Object System.Net.WebClient
+        $wc.Proxy = $null
+        $wc.DownloadFile($url, $destination)
+        if ((Test-Path $destination) -and ((Get-Item $destination).Length -gt 0)) {
+            return $true
+        }
+    } catch {}
+    return $false
+}
+
 # 1. Create target directories
 Write-Host "--> Creating target directories in $veloHome..." -ForegroundColor Yellow
 @($targetDir, $targetStd, $targetInclude, $targetRuntime) | ForEach-Object {
@@ -40,34 +58,106 @@ Write-Host "--> Creating target directories in $veloHome..." -ForegroundColor Ye
     }
 }
 
-# 2. Download and install pre-compiled binary
-Write-Host "--> Downloading standalone compiler from $downloadExeUrl..." -ForegroundColor Yellow
-$downloadSuccess = $false
-try {
-    $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($downloadExeUrl, $targetExe)
-    if ((Test-Path $targetExe) -and ((Get-Item $targetExe).Length -gt 0)) {
-        $downloadSuccess = $true
+# 2. Download and install Standard Library & C Runtime Headers FIRST
+Write-Host "--> Installing Standard Library & Runtime headers..." -ForegroundColor Yellow
+$tempZip = Join-Path ([System.IO.Path]::GetTempPath()) "velo-std.zip"
+$installedStd = Download-AssetFile $downloadStdUrl $tempZip
+
+if ($installedStd) {
+    Expand-Archive -Path $tempZip -DestinationPath $veloHome -Force
+    Remove-Item -Force $tempZip -ErrorAction SilentlyContinue
+} else {
+    # Fallback A: GitHub releases or raw repo archive
+    $fallbackStdUrls = @(
+        "https://github.com/velo-compiler/velo/releases/latest/download/velo-std.zip",
+        "https://github.com/velo-compiler/velo/archive/refs/heads/main.zip"
+    )
+    foreach ($fUrl in $fallbackStdUrls) {
+        if (Download-AssetFile $fUrl $tempZip) {
+            Expand-Archive -Path $tempZip -DestinationPath $veloHome -Force
+            Remove-Item -Force $tempZip -ErrorAction SilentlyContinue
+            $installedStd = $true
+            break
+        }
     }
-} catch {
-    $downloadSuccess = $false
+
+    # Fallback B: Local repo directories
+    if (-not $installedStd) {
+        $localStdCandidates = @()
+        if ($PSScriptRoot) {
+            $localStdCandidates += (Join-Path $PSScriptRoot "..\..\std")
+            $localStdCandidates += (Join-Path $PSScriptRoot "std")
+        }
+        $localStdCandidates += @(".\std", "..\std", "..\..\std", (Join-Path (Get-Location) "std"))
+        foreach ($cand in $localStdCandidates) {
+            if ($cand -and (Test-Path $cand)) {
+                Write-Host "--> Copying standard library from local repo: $cand" -ForegroundColor Yellow
+                Copy-Item -Recurse -Force (Join-Path $cand "*") $targetStd
+                $installedStd = $true
+                break
+            }
+        }
+        $localRuntimeCandidates = @()
+        if ($PSScriptRoot) {
+            $localRuntimeCandidates += (Join-Path $PSScriptRoot "..\..\runtime")
+            $localRuntimeCandidates += (Join-Path $PSScriptRoot "runtime")
+        }
+        $localRuntimeCandidates += @(".\runtime", "..\runtime", "..\..\runtime", (Join-Path (Get-Location) "runtime"))
+        foreach ($cand in $localRuntimeCandidates) {
+            if ($cand -and (Test-Path $cand)) {
+                Copy-Item -Recurse -Force (Join-Path $cand "*") $targetRuntime
+                break
+            }
+        }
+    }
 }
+
+# Ensure include/velo_runtime.h and runtime/velo_runtime.h exist
+$runtimeHeader = Join-Path $targetRuntime "velo_runtime.h"
+$includeHeader = Join-Path $targetInclude "velo_runtime.h"
+if (Test-Path $runtimeHeader) {
+    Copy-Item -Force $runtimeHeader $includeHeader
+} elseif (Test-Path $includeHeader) {
+    Copy-Item -Force $includeHeader $runtimeHeader
+} else {
+    $fallbackHeader = @()
+    if ($PSScriptRoot) {
+        $fallbackHeader += (Join-Path $PSScriptRoot "..\..\runtime\velo_runtime.h")
+    }
+    $fallbackHeader += @(
+        ".\runtime\velo_runtime.h",
+        "..\runtime\velo_runtime.h",
+        "..\..\runtime\velo_runtime.h",
+        (Join-Path (Get-Location) "runtime\velo_runtime.h")
+    )
+    foreach ($fh in $fallbackHeader) {
+        if ($fh -and (Test-Path $fh)) {
+            Copy-Item -Force $fh $runtimeHeader
+            Copy-Item -Force $fh $includeHeader
+            break
+        }
+    }
+}
+Write-Host "--> Standard library installed: $targetStd" -ForegroundColor Green
+
+# 3. Download or Compile standalone compiler (velo.exe)
+Write-Host "--> Installing standalone compiler..." -ForegroundColor Yellow
+$downloadSuccess = Download-AssetFile $downloadExeUrl $targetExe
 
 if (-not $downloadSuccess) {
     # Fallback A: GitHub Releases latest binary
     $githubReleaseExe = "https://github.com/velo-compiler/velo/releases/latest/download/velo.exe"
-    try {
-        Write-Host "--> Trying GitHub release binary from $githubReleaseExe..." -ForegroundColor Yellow
-        $wc = New-Object System.Net.WebClient
-        $wc.DownloadFile($githubReleaseExe, $targetExe)
-        if ((Test-Path $targetExe) -and ((Get-Item $targetExe).Length -gt 0)) {
-            $downloadSuccess = $true
-        }
-    } catch {}
+    $downloadSuccess = Download-AssetFile $githubReleaseExe $targetExe
 }
 
 if (-not $downloadSuccess) {
-    # Fallback B: Compile from bootstrap.c if GCC or Clang is installed locally
+    # Fallback B: Compile from bootstrap.c using local GCC or Clang
+    $knownGcc = @("C:\msys64\ucrt64\bin", "C:\msys64\mingw64\bin")
+    foreach ($k in $knownGcc) {
+        if ((Test-Path (Join-Path $k "gcc.exe")) -and ($env:PATH -notlike "*$k*")) {
+            $env:PATH = "$k;$env:PATH"
+        }
+    }
     $gccCmd = Get-Command gcc -ErrorAction SilentlyContinue
     $clangCmd = Get-Command clang -ErrorAction SilentlyContinue
     if ($gccCmd -or $clangCmd) {
@@ -80,18 +170,27 @@ if (-not $downloadSuccess) {
         $bootstrapFile = Join-Path $veloHome "bootstrap.c"
         $downloadedBootstrap = $false
         foreach ($bUrl in $bootstrapUrls) {
-            try {
-                $wc = New-Object System.Net.WebClient
-                $wc.DownloadFile($bUrl, $bootstrapFile)
-                if ((Test-Path $bootstrapFile) -and ((Get-Item $bootstrapFile).Length -gt 1000)) {
+            if (Download-AssetFile $bUrl $bootstrapFile) {
+                if ((Get-Item $bootstrapFile).Length -gt 1000) {
                     $downloadedBootstrap = $true
                     break
                 }
-            } catch {}
+            }
         }
         if ($downloadedBootstrap) {
+            $compileArgs = @(
+                "-O2", "-fwrapv", "-std=c99",
+                "-I", $targetInclude,
+                "-I", $targetRuntime,
+                "-I", (Join-Path $veloHome "runtime"),
+                $bootstrapFile,
+                "-o", $targetExe
+            )
             try {
-                & $cCompiler -std=c99 -O2 $bootstrapFile -o $targetExe
+                $oldEA = $ErrorActionPreference
+                $ErrorActionPreference = "Continue"
+                & $cCompiler $compileArgs 2>$null
+                $ErrorActionPreference = $oldEA
                 if ((Test-Path $targetExe) -and ((Get-Item $targetExe).Length -gt 0)) {
                     $downloadSuccess = $true
                     Write-Host "--> Successfully compiled standalone binary: $targetExe" -ForegroundColor Green
@@ -103,9 +202,12 @@ if (-not $downloadSuccess) {
 
 if (-not $downloadSuccess) {
     # Fallback C: Local repo binary candidates if cloned locally
-    $localCandidates = @(
-        (Join-Path $PSScriptRoot "..\..\bin\velo.exe"),
-        (Join-Path $PSScriptRoot "velo.exe"),
+    $localCandidates = @()
+    if ($PSScriptRoot) {
+        $localCandidates += (Join-Path $PSScriptRoot "..\..\bin\velo.exe")
+        $localCandidates += (Join-Path $PSScriptRoot "velo.exe")
+    }
+    $localCandidates += @(
         ".\bin\velo.exe",
         "..\bin\velo.exe",
         "..\..\bin\velo.exe",
@@ -132,94 +234,6 @@ if (-not (Test-Path $targetExe)) {
     exit 1
 }
 Write-Host "--> Binary installed: $targetExe" -ForegroundColor Green
-
-# 3. Download and install Standard Library & C Runtime Header
-Write-Host "--> Installing Standard Library & Runtime headers..." -ForegroundColor Yellow
-$tempZip = Join-Path ([System.IO.Path]::GetTempPath()) "velo-std.zip"
-$installedStd = $false
-
-try {
-    $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($downloadStdUrl, $tempZip)
-    if (Test-Path $tempZip) {
-        Expand-Archive -Path $tempZip -DestinationPath $veloHome -Force
-        Remove-Item -Force $tempZip -ErrorAction SilentlyContinue
-        $installedStd = $true
-    }
-} catch {
-    # Fallback A: GitHub releases or raw repo archive
-    $fallbackStdUrls = @(
-        "https://github.com/velo-compiler/velo/releases/latest/download/velo-std.zip",
-        "https://github.com/velo-compiler/velo/archive/refs/heads/main.zip"
-    )
-    foreach ($fUrl in $fallbackStdUrls) {
-        try {
-            $wc = New-Object System.Net.WebClient
-            $wc.DownloadFile($fUrl, $tempZip)
-            if (Test-Path $tempZip) {
-                Expand-Archive -Path $tempZip -DestinationPath $veloHome -Force
-                Remove-Item -Force $tempZip -ErrorAction SilentlyContinue
-                $installedStd = $true
-                break
-            }
-        } catch {}
-    }
-
-    # Fallback B: Local repo directories
-    $localStdCandidates = @(
-        (Join-Path $PSScriptRoot "..\..\std"),
-        ".\std",
-        "..\std",
-        "..\..\std",
-        (Join-Path (Get-Location) "std")
-    )
-    foreach ($cand in $localStdCandidates) {
-        if ($cand -and (Test-Path $cand)) {
-            Write-Host "--> Copying standard library from local repo: $cand" -ForegroundColor Yellow
-            Copy-Item -Recurse -Force (Join-Path $cand "*") $targetStd
-            $installedStd = $true
-            break
-        }
-    }
-    $localRuntimeCandidates = @(
-        (Join-Path $PSScriptRoot "..\..\runtime"),
-        ".\runtime",
-        "..\runtime",
-        "..\..\runtime",
-        (Join-Path (Get-Location) "runtime")
-    )
-    foreach ($cand in $localRuntimeCandidates) {
-        if ($cand -and (Test-Path $cand)) {
-            Copy-Item -Recurse -Force (Join-Path $cand "*") $targetRuntime
-            break
-        }
-    }
-}
-
-# Ensure include/velo_runtime.h and runtime/velo_runtime.h exist
-$runtimeHeader = Join-Path $targetRuntime "velo_runtime.h"
-$includeHeader = Join-Path $targetInclude "velo_runtime.h"
-if (Test-Path $runtimeHeader) {
-    Copy-Item -Force $runtimeHeader $includeHeader
-} elseif (Test-Path $includeHeader) {
-    Copy-Item -Force $includeHeader $runtimeHeader
-} else {
-    $fallbackHeader = @(
-        ".\runtime\velo_runtime.h",
-        "..\runtime\velo_runtime.h",
-        "..\..\runtime\velo_runtime.h",
-        (Join-Path (Get-Location) "runtime\velo_runtime.h")
-    )
-    foreach ($fh in $fallbackHeader) {
-        if ($fh -and (Test-Path $fh)) {
-            Copy-Item -Force $fh $runtimeHeader
-            Copy-Item -Force $fh $includeHeader
-            break
-        }
-    }
-}
-
-Write-Host "--> Standard library installed: $targetStd" -ForegroundColor Green
 
 # 4. Configure persistent environment variables
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
