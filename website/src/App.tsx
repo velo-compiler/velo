@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { SearchModal } from './components/SearchModal';
-import { LearningProgressModal } from './components/LearningProgressModal';
 import { HomePage } from './pages/HomePage';
 import { DocsPage } from './pages/DocsPage';
 import { PlaygroundPage } from './pages/PlaygroundPage';
@@ -15,7 +14,6 @@ export function App() {
   const [currentView, setCurrentView] = useState<'home' | 'docs' | 'playground' | 'stdlib' | 'architecture'>('home');
   const [currentDocPage, setCurrentDocPage] = useState<DocPage>(ALL_DOC_PAGES[0]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDark, setIsDark] = useState(true);
 
@@ -151,15 +149,6 @@ export function App() {
     });
   };
 
-  const handleResetProgress = () => {
-    setCompletedSlugs(new Set());
-    try {
-      localStorage.removeItem('velo_docs_completed');
-    } catch {
-      // ignore
-    }
-  };
-
   const handleNavigate = (view: 'home' | 'docs' | 'playground' | 'stdlib' | 'architecture') => {
     setCurrentView(view);
     window.location.hash = view;
@@ -176,9 +165,6 @@ export function App() {
         isDark={isDark}
         onToggleTheme={toggleTheme}
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-        completedCount={completedSlugs.size}
-        totalCount={ALL_DOC_PAGES.length}
-        onOpenProgressModal={() => setIsProgressModalOpen(true)}
       />
 
       {/* Main Page Content */}
@@ -214,17 +200,6 @@ export function App() {
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onSelectResult={handleSelectDocPage}
-      />
-
-      {/* Learning Progress Modal */}
-      <LearningProgressModal
-        isOpen={isProgressModalOpen}
-        onClose={() => setIsProgressModalOpen(false)}
-        categories={DOC_CATEGORIES}
-        completedSlugs={completedSlugs}
-        onToggleComplete={handleToggleComplete}
-        onResetProgress={handleResetProgress}
-        onSelectPage={handleSelectDocPage}
       />
 
       {/* Footer */}
