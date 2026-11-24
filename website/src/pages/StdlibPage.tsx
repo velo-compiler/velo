@@ -2,15 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   Archive, 
   Search, 
-  CheckCircle2, 
   Code2, 
   Copy, 
   Check, 
   ShieldCheck, 
-  ExternalLink,
-  Layers,
-  Terminal,
-  Zap
+  Terminal
 } from 'lucide-react';
 import { STDLIB_MODULES } from '../data/stdlib';
 import { StdlibModule } from '../types/docs';

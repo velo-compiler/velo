@@ -19,7 +19,7 @@ import {
   Terminal,
   X
 } from 'lucide-react';
-import { DocCategory, DocPage } from '../types/docs';
+import { DocCategory } from '../types/docs';
 
 interface DocsSidebarProps {
   categories: DocCategory[];

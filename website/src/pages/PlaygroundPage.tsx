@@ -6,15 +6,11 @@ import {
   Check, 
   Terminal, 
   Code2, 
-  Zap, 
-  Layers, 
   CheckCircle2, 
-  Cpu, 
   Info 
 } from 'lucide-react';
 import { PLAYGROUND_PRESETS } from '../data/playgroundPresets';
 import { runVeloVirtual, SimulationResult } from '../utils/veloSimulator';
-import { highlightVeloHtml } from '../utils/veloHighlighter';
 
 export const PlaygroundPage: React.FC = () => {
   const [selectedPresetId, setSelectedPresetId] = useState<string>(PLAYGROUND_PRESETS[0].id);

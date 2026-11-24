@@ -55,7 +55,6 @@ export function tokenizeVelo(code: string): Token[] {
 
     // 3. String literal with interpolation handling
     if (char === '"') {
-      let start = i;
       i++; // skip opening quote
       tokens.push({ type: 'string', value: '"' });
       
@@ -72,7 +71,6 @@ export function tokenizeVelo(code: string): Token[] {
           }
           // Highlight interpolation expression
           let braceDepth = 1;
-          let interpStart = i;
           i++; // skip '{'
           tokens.push({ type: 'operator', value: '{' });
           

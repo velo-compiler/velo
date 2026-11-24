@@ -4,10 +4,7 @@ import {
   Clock, 
   CheckCircle2, 
   ArrowLeft, 
-  ArrowRight, 
-  BookOpen,
-  Share2,
-  Terminal
+  ArrowRight
 } from 'lucide-react';
 import { DocCategory, DocPage, DocHeading } from '../types/docs';
 import { DocsSidebar } from '../components/DocsSidebar';

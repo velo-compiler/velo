@@ -2,14 +2,7 @@ import React from 'react';
 import { 
   Layers, 
   ShieldCheck, 
-  Cpu, 
-  Zap, 
-  ArrowRight, 
-  CheckCircle2, 
-  Terminal, 
-  Code2, 
-  Sparkles,
-  GitCommit,
+  Cpu,
   Check
 } from 'lucide-react';
 

@@ -1210,7 +1210,7 @@ export const STDLIB_MODULES: StdlibModule[] = [
         name: 'csv_escape_str',
         signature: 'act csv_escape_str(s: string) -> string',
         description: 'One-shot field serializer into a heap-allocated CSV-safe string.',
-        example: 'let safe = csv_escape_str("say \"hi\"")'
+        example: "let safe = csv_escape_str('say \"hi\"')"
       },
       {
         name: 'csv_make_row_str',

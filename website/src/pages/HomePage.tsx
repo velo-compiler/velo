@@ -2,28 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowRight, 
   Terminal, 
-  BookOpen, 
-  ShieldCheck, 
   Cpu, 
   Copy, 
   Check, 
-  Layers, 
-  Box, 
   Code2,
   Database,
-  Monitor,
-  Gamepad2,
-  Play,
-  RotateCcw,
-  Sparkles,
-  Zap,
   Activity,
   CheckCircle2,
-  ExternalLink,
   ChevronRight
 } from 'lucide-react';
 import { CodeBlock } from '../components/CodeBlock';
-import { VeloLogo } from '../components/VeloLogo';
 
 interface HomePageProps {
   onNavigate: (view: 'home' | 'docs' | 'playground' | 'stdlib' | 'architecture') => void;
@@ -47,11 +35,9 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate, onSelectDocPage 
     { cmd: 'SET cluster:mode "active-passive"', res: '+OK', time: '0.04ms' },
     { cmd: 'GET cluster:mode', res: '"active-passive"', time: '0.03ms' },
   ]);
-  const [kvInput, setKvInput] = useState('');
 
   // 3D Voxel Engine Canvas State
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [fps, setFps] = useState(120);
 
   // Origin for quickstart script
   const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'http://localhost:5173';
@@ -85,7 +71,6 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate, onSelectDocPage 
     else if (upper === 'INFO') res = '# VeloKV Server v2.0\ntcp_port: 6379\nclients_connected: 12\nallocations: 0 (pure zone)';
     
     setKvHistory(prev => [...prev.slice(-4), { cmd: raw, res, time: '0.03ms' }]);
-    setKvInput('');
   };
 
   // Canvas 3D Voxel Animation Loop
