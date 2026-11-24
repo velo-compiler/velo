@@ -1,9 +1,44 @@
-# Velo Programming Language (`.vl`)
+<p align="center">
+  <a href="https://velo-compiler.github.io/velo/">
+    <img src="website/public/velo-logo.svg" width="128" height="128" alt="Velo Logo" />
+  </a>
+</p>
 
-> **Code at high velocity.**
-> The raw speed and hardware control of C, with modern syntax as clean as TypeScript, and zero garbage collection pauses.
+<h1 align="center">Velo Programming Language</h1>
 
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+<p align="center">
+  <b>Code at high velocity.</b><br>
+  The raw speed and hardware control of C, with modern syntax as clean as TypeScript, and zero garbage collection pauses.
+</p>
+
+<p align="center">
+  <a href="https://velo-compiler.github.io/velo/"><img src="https://img.shields.io/badge/docs-website-00d4f0?style=flat-square" alt="Documentation"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg?style=flat-square" alt="License"></a>
+  <a href="https://github.com/velo-compiler/velo/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/velo-compiler/velo/ci.yml?branch=main&label=CI&style=flat-square" alt="CI Status"></a>
+  <a href="https://velo-compiler.github.io/velo/"><img src="https://img.shields.io/badge/version-2.0%20Native-1d4ed8?style=flat-square" alt="Velo Version"></a>
+</p>
+
+<p align="center">
+  <a href="https://velo-compiler.github.io/velo/"><b>🌐 Visit Website & Documentation &rarr;</b></a>
+</p>
+
+---
+
+## Quick Install
+
+One-liner installer downloads the standalone native compiler and sets up your environment:
+
+<!-- not-compiled -->
+```powershell
+# Windows (PowerShell)
+irm https://velo-compiler.github.io/velo/install.ps1 | iex
+```
+
+<!-- not-compiled -->
+```bash
+# Linux / macOS (Bash)
+curl -fsSL https://velo-compiler.github.io/velo/install.sh | bash
+```
 
 ---
 
@@ -194,6 +229,7 @@ All showcase projects are continuously verified for syntactic, semantic, and C-c
 
 ## Documentation
 
+* **[Official Website & Interactive Docs](https://velo-compiler.github.io/velo/)**
 * [Language Specification](docs/SPECIFICATION.md)
 * [Step 2 Specification (Compiler Essentials)](docs/STEP2_SPECIFICATION.md)
 * [Compiler Architecture (Stage 1)](docs/ARCHITECTURE.md)
