@@ -80,9 +80,9 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
   }).filter(cat => cat.pages.length > 0);
 
   return (
-    <aside className="w-full h-full flex flex-col bg-[#0f121a] border-r border-white/[0.08] text-sm">
+    <aside className="w-full h-full flex flex-col bg-[#0f121a] text-sm overflow-hidden min-h-0">
       {/* Top Filter and Mobile Close */}
-      <div className="p-3.5 border-b border-white/[0.08] flex items-center gap-2">
+      <div className="p-3.5 border-b border-white/[0.08] flex items-center gap-2 shrink-0">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
           <input
@@ -104,7 +104,7 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
       </div>
 
       {/* Categories & Pages Tree */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 min-h-0 overscroll-contain">
         {filteredCategories.map(cat => {
           const isCollapsed = collapsedCategories.has(cat.id);
           return (

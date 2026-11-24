@@ -44,7 +44,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex gap-8 items-start relative">
         {/* ================= 1. LEFT SIDEBAR (DESKTOP) ================= */}
-        <div className="hidden md:block w-64 lg:w-72 shrink-0 sticky top-20 max-h-[calc(100vh-6rem)] rounded-2xl overflow-hidden border border-white/[0.08]">
+        <div className="hidden md:flex flex-col w-64 lg:w-72 shrink-0 sticky top-20 h-[calc(100vh-6rem)] rounded-2xl overflow-hidden border border-white/[0.08] bg-[#0f121a]">
           <DocsSidebar
             categories={categories}
             currentPageSlug={currentPage.slug}
@@ -61,7 +61,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({
               className="fixed inset-0 bg-black/75 backdrop-blur-sm"
               onClick={onCloseMobileSidebar}
             />
-            <div className="relative w-80 max-w-[85vw] h-full bg-[#0f121a] shadow-2xl z-10">
+            <div className="relative w-80 max-w-[85vw] h-full bg-[#0f121a] shadow-2xl z-10 flex flex-col overflow-hidden">
               <DocsSidebar
                 categories={categories}
                 currentPageSlug={currentPage.slug}
