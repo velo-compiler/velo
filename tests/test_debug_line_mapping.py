@@ -35,9 +35,10 @@ def find_gdb():
     cand = shutil.which("gdb", path=get_env().get("PATH", ""))
     if cand:
         return cand
+    gdb_in_cc = Path(cc_dir()) / "gdb.exe"
+    if gdb_in_cc.is_file():
+        return str(gdb_in_cc)
     for default_path in [
-        r"C:\msys64\ucrt64\bin\gdb.exe",
-        r"C:\msys64\mingw64\bin\gdb.exe",
         "/usr/bin/gdb",
         "/usr/local/bin/gdb",
     ]:
@@ -69,6 +70,7 @@ def test_emit_c_line_directives_match_source_lines(tmp_path):
         [str(VELO_EXE), "emit-c", str(src_file)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -101,6 +103,7 @@ def test_no_line_directives_flag(tmp_path):
         [str(VELO_EXE), "emit-c", str(src_file), "--no-line-directives"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -136,6 +139,7 @@ def test_multi_file_line_directives_attribute_correct_files(tmp_path):
         [str(VELO_EXE), "emit-c", str(main_file)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -185,6 +189,7 @@ def test_gdb_breakpoint_resolution_on_velo_source_lines(tmp_path):
         [str(VELO_EXE), "build", str(src_file), "-o", str(out_exe), "--debug"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -207,6 +212,7 @@ def test_gdb_breakpoint_resolution_on_velo_source_lines(tmp_path):
         gdb_cmd,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )

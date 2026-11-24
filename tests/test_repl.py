@@ -39,6 +39,7 @@ def run_repl(input_text: str):
         input=input_text,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -165,6 +166,7 @@ def test_repl_usage_help():
         [str(VELO_EXE), "help"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )

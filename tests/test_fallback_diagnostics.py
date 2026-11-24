@@ -23,6 +23,7 @@ def run_velo_compile(tmp_path: Path, source: str, stem: str = "probe") -> subpro
         [str(VELO_BIN), "build", str(src_file)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(REPO_ROOT),
     )
 

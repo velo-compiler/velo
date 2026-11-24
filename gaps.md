@@ -76,7 +76,7 @@ that core and a usable product.
 | **81** | Performance and Benchmark Credibility | P1 | **COMPLETED** | 5 | 5 |
 | **82** | Compiler Robustness and Fuzzing | P1 | partial | 5 | 5 |
 | **83** | Documentation and Claims Integrity | P1 | yes | 6 | 3 |
-| **84** | Ecosystem, Governance, Showcase | P2 | yes | 5 | 4 |
+| **84** | Ecosystem, Governance, Showcase | P2 | **COMPLETED** | 5 | 5 |
 | **85** | Recorded Residual Limitations | P2 | yes | 4 | 4 |
 
 ## 4. Recommended Execution Waves
@@ -3589,7 +3589,7 @@ that Phase 70 has not delivered.
 
 ---
 
-# Phase 84: Ecosystem, Governance, Showcase (P2) - OPEN
+# Phase 84: Ecosystem, Governance, Showcase (P2) - [COMPLETED] ✅ / CLOSED
 
 ## Defect
 
@@ -3700,15 +3700,29 @@ half-tracked site is a half-broken release process.
   - `git status --short website/` (clean of untracked files).
   - `npm run build` in `website/` (2078 modules transformed, built in 886ms).
 
-**84.5** Add `docs/ROADMAP.md` generated from this file's open phases, so the
+**84.5 [COMPLETED] ✅** Add `docs/ROADMAP.md` generated from this file's open phases, so the
 public roadmap cannot drift from the registry (`scripts/gen_roadmap.py`,
 checked in CI).
 
+- *Former Defect:*
+  The repository lacked an automated, verified mechanism to expose the engineering roadmap from `gaps.md` to public documentation (`docs/ROADMAP.md`), creating a risk of public documentation drifting from the authoritative architectural audit registry.
+- *Fix Applied:*
+  - Implemented `scripts/gen_roadmap.py` to deterministically parse `gaps.md` (summary backlog, execution waves, phase matrix, open phase invariants/tasks/exit criteria, and residual limitations) and generate `docs/ROADMAP.md`.
+  - Added CLI flags `--check` (fails with code 1 and unified diff on drift) and `--stdout`.
+  - Integrated `python scripts/gen_roadmap.py --check` into `.github/workflows/ci.yml` in the `fast` push lane.
+  - Implemented comprehensive regression test suite `tests/test_roadmap_generator.py` marked `@pytest.mark.fast` verifying freshness check, drift detection, AST/structure parity, and CLI modes.
+- *Residual Limitation:*
+  The generated roadmap reflects the committed state of `gaps.md`; changes in working-tree phases require re-running `python scripts/gen_roadmap.py`.
+- *Verification:*
+  - `python scripts/gen_roadmap.py --check` passes with exit code 0.
+  - `python -m pytest tests/test_roadmap_generator.py -v` (5/5 passed).
+  - All Phase 84 exit criteria verified in-tree.
+
 ## Phase Exit Criteria
 
-- `git status --short` is clean for `editors/` and `website/`.
-- Issue and PR templates exist and reference the task contract.
-- `docs/ROADMAP.md` is generated from `gaps.md` and fails CI when stale.
+- `git status --short` is clean for `editors/` and `website/`. [VERIFIED: tracked in Task 84.1 and Task 84.4, verified via tests/test_grammar_conformance.py and tests/test_website_assets.py]
+- Issue and PR templates exist and reference the task contract. [VERIFIED: created in .github/ and tested in tests/test_issue_and_pr_templates.py in Task 84.2]
+- `docs/ROADMAP.md` is generated from `gaps.md` and fails CI when stale. [VERIFIED: scripts/gen_roadmap.py --check enforced in CI and verified via tests/test_roadmap_generator.py in Task 84.5]
 
 ---
 

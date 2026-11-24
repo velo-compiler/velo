@@ -39,7 +39,7 @@ def run_velo(args, cwd=None):
 def extract_keywords_from_spec():
     """Extracts the list of reserved keywords from Section 1.4 of docs/SPECIFICATION.md."""
     content = SPEC_FILE.read_text(encoding="utf-8")
-    m = re.search(r"### 1\.4 Keywords\s+The following keywords are reserved in Velo:\s+```\s+([\s\S]*?)```", content)
+    m = re.search(r"### 1\.4 Keywords\s+The following keywords are reserved in Velo:\s+(?:<!--.*?-->\s*)?```\s+([\s\S]*?)```", content)
     assert m is not None, "Failed to find Section 1.4 Keywords table in docs/SPECIFICATION.md"
     raw_kw = m.group(1).split()
     return sorted(list(set(raw_kw)))

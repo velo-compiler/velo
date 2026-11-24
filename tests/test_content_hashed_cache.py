@@ -76,6 +76,7 @@ def test_cache_initial_build_and_cache_hit(tmp_path):
         [str(VELO_EXE), "build", str(main_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -83,7 +84,7 @@ def test_cache_initial_build_and_cache_hit(tmp_path):
     assert out_exe.is_file(), "Target executable was not created"
 
     # Check execution output
-    run_res1 = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run_res1 = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8")
     assert run_res1.returncode == 0
     assert "hello from helper" in run_res1.stdout
 
@@ -107,6 +108,7 @@ def test_cache_initial_build_and_cache_hit(tmp_path):
         [str(VELO_EXE), "build", str(main_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -146,11 +148,12 @@ def test_cache_invalidation_on_dependency_touch(tmp_path):
         [str(VELO_EXE), "build", str(app_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
     assert res1.returncode == 0
-    run1 = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run1 = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8")
     assert run1.stdout.strip() == "42"
 
     hash1 = parse_last_build().get("hash")
@@ -167,6 +170,7 @@ def test_cache_invalidation_on_dependency_touch(tmp_path):
         [str(VELO_EXE), "build", str(app_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -177,7 +181,7 @@ def test_cache_invalidation_on_dependency_touch(tmp_path):
     assert hash2 != hash1, "Hash should have changed when dependency was modified"
 
     # Verify execution output reflects updated dependency
-    run2 = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run2 = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8")
     assert run2.stdout.strip() == "99"
 
     # Build 3: touch nothing -> cache hit
@@ -185,6 +189,7 @@ def test_cache_invalidation_on_dependency_touch(tmp_path):
         [str(VELO_EXE), "build", str(app_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -211,6 +216,7 @@ def test_cache_flag_sensitivity(tmp_path):
         [str(VELO_EXE), "build", str(src_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -222,6 +228,7 @@ def test_cache_flag_sensitivity(tmp_path):
         [str(VELO_EXE), "build", str(src_file), "-o", str(out_exe), "--release"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -236,6 +243,7 @@ def test_cache_flag_sensitivity(tmp_path):
         [str(VELO_EXE), "build", str(src_file), "-o", str(out_exe), "--strict-safety"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -264,6 +272,7 @@ def test_cache_velo_run(tmp_path):
         [str(VELO_EXE), "run", str(src_file)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -277,6 +286,7 @@ def test_cache_velo_run(tmp_path):
         [str(VELO_EXE), "run", str(src_file)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -307,6 +317,7 @@ def test_cache_noop_touch_preserves_hit(tmp_path):
         [str(VELO_EXE), "build", str(src_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -321,6 +332,7 @@ def test_cache_noop_touch_preserves_hit(tmp_path):
         [str(VELO_EXE), "build", str(src_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -358,11 +370,12 @@ def test_cache_transitive_dependency_invalidation(tmp_path):
         [str(VELO_EXE), "build", str(a_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
     assert res1.returncode == 0
-    run1 = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run1 = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8")
     assert run1.stdout.strip() == "c_v1"
     hash1 = parse_last_build().get("hash")
 
@@ -374,6 +387,7 @@ def test_cache_transitive_dependency_invalidation(tmp_path):
         [str(VELO_EXE), "build", str(a_file), "-o", str(out_exe)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_env(),
         cwd=str(REPO_ROOT),
     )
@@ -383,6 +397,6 @@ def test_cache_transitive_dependency_invalidation(tmp_path):
     hash2 = build2.get("hash")
     assert hash2 != hash1
 
-    run2 = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run2 = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8")
     assert run2.stdout.strip() == "c_v2"
 

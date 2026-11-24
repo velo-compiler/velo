@@ -95,6 +95,7 @@ act main() -> i32 {
         [str(VELO_EXE), "emit-c", str(src_file), "-o", str(c_file)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_build_env(),
     )
     assert res.returncode == 0, f"emit-c failed: {res.stderr}\nstdout: {res.stdout}"
@@ -166,9 +167,10 @@ act main() -> i32 {
         [str(VELO_EXE), "build", str(src_file), "-o", str(exe_file)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=get_build_env(),
     )
     assert res.returncode == 0, f"build failed: {res.stderr}\nstdout: {res.stdout}"
 
-    run_res = subprocess.run([str(exe_file)], capture_output=True, text=True)
+    run_res = subprocess.run([str(exe_file)], capture_output=True, text=True, encoding="utf-8")
     assert run_res.returncode == 0, f"execution failed with return code {run_res.returncode}"

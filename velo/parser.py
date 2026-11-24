@@ -100,7 +100,10 @@ class Parser:
         return Program(declarations=declarations)
 
     def _parse_top_level_declaration(self) -> Optional[Decl]:
-        if self._check(TokenType.USE):
+        if self._check(TokenType.VIEW) or self._check(TokenType.UNSAFE):
+            self._advance()
+            return self._parse_top_level_declaration()
+        elif self._check(TokenType.USE):
             return self._parse_use_decl()
         elif self._check(TokenType.EXTERN):
             return self._parse_extern_decl()

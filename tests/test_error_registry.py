@@ -47,7 +47,7 @@ def test_velo_explain_cli():
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
-            encoding="utf-8",
+        encoding="utf-8",
             errors="replace",
             env=get_env()
         )
@@ -55,10 +55,12 @@ def test_velo_explain_cli():
         assert code in res.stdout, f"Expected {code} in explain output: {res.stdout}"
 
     # Also test normalization: "E0001" and "0001"
-    res_short = subprocess.run([str(VELO_EXE), "explain", "E0001"], capture_output=True, text=True, env=get_env())
+    res_short = subprocess.run([str(VELO_EXE), "explain", "E0001"], capture_output=True, text=True,
+        encoding="utf-8", env=get_env())
     assert res_short.returncode == 0 and "VELO-E0001" in res_short.stdout
 
-    res_num = subprocess.run([str(VELO_EXE), "explain", "0001"], capture_output=True, text=True, env=get_env())
+    res_num = subprocess.run([str(VELO_EXE), "explain", "0001"], capture_output=True, text=True,
+        encoding="utf-8", env=get_env())
     assert res_num.returncode == 0 and "VELO-E0001" in res_num.stdout
 
 
