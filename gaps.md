@@ -3683,8 +3683,22 @@ what "1.0" means, and the deprecation policy (minimum two minor versions).
   - `python -m pytest tests/test_readme_claims.py -v` (58 passed in 2.28s).
   - Verified Markdown rendering, section anchors, and cross-references.
 
-**84.4** Commit the website assets currently untracked, or delete them. A
+**84.4 [COMPLETED] ✅** Commit the website assets currently untracked, or delete them. A
 half-tracked site is a half-broken release process.
+
+- *Former Defect:*
+  Six website assets were untracked in git (`website/public/apple-touch-icon.png`, `website/public/bootstrap.c`, `website/public/favicon.ico`, `website/public/velo-horizontal.svg`, `website/public/velo-logo.svg`, `website/src/components/VeloLogo.tsx`), leaving the documentation website partially unversioned and vulnerable to broken builds or missing branding assets in release pipelines. Furthermore, `website/public/bootstrap.c` had drifted from the canonical root `bootstrap.c` snapshot.
+- *Fix Applied:*
+  - Refreshed distribution assets via `scripts/package_dist.py` and synchronized `website/public/bootstrap.c` with root `bootstrap.c` (bit-for-bit identical SHA-256: `789a80b8c63095ee0d646d73183309bfc6c2c0995dec335a2e6df2a8a6a14c22`).
+  - Added and tracked all brand, logo, icon, and React component assets in git (`apple-touch-icon.png`, `favicon.ico`, `velo-horizontal.svg`, `velo-logo.svg`, `VeloLogo.tsx`, `velo-std.zip`, `velo-std.tar.gz`).
+  - Verified website production build (`npm run build`, `tsc -b && vite build`) and linting (`oxlint`) succeed with 0 errors.
+  - Implemented automated verification test suite `tests/test_website_assets.py` asserting asset presence, bit-for-bit `bootstrap.c` hash parity, distribution archive integrity, clean git status for `website/`, and successful production build.
+- *Residual Limitation:*
+  Website package dependencies are managed via `package-lock.json`; offline local verification without Node/npm skips `test_website_build` while still enforcing asset presence and hash parity.
+- *Verification:*
+  - `python -m pytest tests/test_website_assets.py -v` (5/5 passed in 1.74s).
+  - `git status --short website/` (clean of untracked files).
+  - `npm run build` in `website/` (2078 modules transformed, built in 886ms).
 
 **84.5** Add `docs/ROADMAP.md` generated from this file's open phases, so the
 public roadmap cannot drift from the registry (`scripts/gen_roadmap.py`,

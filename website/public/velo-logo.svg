@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="veloCobalt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="veloCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="100%" stop-color="#0284C7"/>
+    </linearGradient>
+  </defs>
+  <g id="velo-symbol">
+    <path d="M 76,112 L 180,112 L 244,272 L 214,404 L 172,404 L 76,192 Z" fill="url(#veloCobalt)"/>
+    <path d="M 268,212 L 336,88 L 436,88 L 280,432 L 236,432 L 254,308 Z" fill="url(#veloCyan)"/>
+  </g>
+</svg>

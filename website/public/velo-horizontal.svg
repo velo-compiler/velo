@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 180" width="640" height="180">
+  <defs>
+    <linearGradient id="veloCobalt" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="veloCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="100%" stop-color="#0284C7"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="180" rx="24" fill="#0B0F17"/>
+  <g id="velo-horizontal-lockup">
+    <!-- Symbol -->
+    <g transform="translate(36, 26) scale(0.25)">
+      <path d="M 76,112 L 180,112 L 244,272 L 214,404 L 172,404 L 76,192 Z" fill="url(#veloCobalt)"/>
+      <path d="M 268,212 L 336,88 L 436,88 L 280,432 L 236,432 L 254,308 Z" fill="url(#veloCyan)"/>
+    </g>
+    <!-- Outlined Wordmark -->
+    <g transform="translate(196, 42) scale(0.8)" fill="#FFFFFF">
+      <path d="M 0,0 L 28,0 L 52,88 L 76,0 L 104,0 L 62,120 L 42,120 Z"/>
+      <path transform="translate(112, 0)" d="M 74,96 C 68,110 56,120 40,120 C 18,120 0,102 0,78 C 0,54 18,36 40,36 C 63,36 78,53 78,80 L 78,84 L 22,84 C 23,97 31,103 41,103 C 51,103 60,97 64,88 Z M 22,68 L 57,68 C 56,53 49,49 40,49 C 31,49 24,54 22,68 Z"/>
+      <path transform="translate(206, 0)" d="M 0,0 L 22,0 L 22,120 L 0,120 Z"/>
+      <path transform="translate(242, 0)" d="M 42,36 C 65.2,36 84,54.8 84,78 C 84,101.2 65.2,120 42,120 C 18.8,120 0,101.2 0,78 C 0,54.8 18.8,36 42,36 Z M 42,56 C 29.8,56 20,65.8 20,78 C 20,90.2 29.8,100 42,100 C 54.2,100 64,90.2 64,78 C 64,65.8 54.2,56 42,56 Z"/>
+    </g>
+  </g>
+</svg>
