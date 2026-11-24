@@ -87,7 +87,36 @@ def _is_ancestor(sha):
         encoding="utf-8",
         errors="replace",
     )
-    return res.returncode == 0
+    if res.returncode == 0:
+        return True
+    # In shallow clones (e.g., CI runner default), deepen history to resolve ancestry:
+    is_shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if is_shallow.stdout.strip() == "true":
+        subprocess.run(
+            ["git", "fetch", "--unshallow"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        retry = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", sha, "HEAD"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return retry.returncode == 0
+    return False
 
 
 def test_ci_status_file_exists():
