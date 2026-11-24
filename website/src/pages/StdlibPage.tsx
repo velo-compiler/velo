@@ -78,12 +78,12 @@ export const StdlibPage: React.FC = () => {
           </div>
 
           {/* Tier Switcher */}
-          <div className="flex rounded-xl bg-slate-900 p-1 border border-slate-800 shrink-0">
+          <div className="flex rounded-lg bg-[#161b26] p-0.5 border border-white/[0.08] shrink-0 text-xs">
             <button
               onClick={() => setSelectedTier('all')}
-              className={`px-3 py-1 text-xs rounded-lg transition-all ${
+              className={`px-3 py-1 rounded transition-colors ${
                 selectedTier === 'all'
-                  ? 'bg-slate-800 text-cyan-300 font-semibold shadow'
+                  ? 'bg-[#0f121a] text-white font-medium border border-white/[0.08]'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -91,9 +91,9 @@ export const StdlibPage: React.FC = () => {
             </button>
             <button
               onClick={() => setSelectedTier('1')}
-              className={`px-3 py-1 text-xs rounded-lg transition-all ${
+              className={`px-3 py-1 rounded transition-colors ${
                 selectedTier === '1'
-                  ? 'bg-slate-800 text-cyan-300 font-semibold shadow'
+                  ? 'bg-[#0f121a] text-white font-medium border border-white/[0.08]'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -101,9 +101,9 @@ export const StdlibPage: React.FC = () => {
             </button>
             <button
               onClick={() => setSelectedTier('2')}
-              className={`px-3 py-1 text-xs rounded-lg transition-all ${
+              className={`px-3 py-1 rounded transition-colors ${
                 selectedTier === '2'
-                  ? 'bg-slate-800 text-cyan-300 font-semibold shadow'
+                  ? 'bg-[#0f121a] text-white font-medium border border-white/[0.08]'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -116,7 +116,7 @@ export const StdlibPage: React.FC = () => {
       {/* Two-Column Explorer Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Left: Module List */}
-        <div className="rounded-2xl bg-[#0D1117] border border-slate-800 p-2 space-y-1 max-h-[750px] overflow-y-auto">
+        <div className="rounded-2xl bg-[#0f121a] border border-white/[0.08] p-2 space-y-1 max-h-[750px] overflow-y-auto">
           {filteredModules.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-500">
               No matching standard library modules found.
@@ -130,17 +130,17 @@ export const StdlibPage: React.FC = () => {
                   onClick={() => setSelectedModule(mod)}
                   className={`w-full text-left p-3 rounded-xl transition-all flex items-start justify-between gap-2 ${
                     isSelected
-                      ? 'bg-cyan-950/40 border border-cyan-500/30 text-white'
-                      : 'hover:bg-slate-850 text-slate-300 border border-transparent'
+                      ? 'bg-[#161b26] border border-white/[0.12] text-white'
+                      : 'hover:bg-white/[0.03] text-slate-300 border border-transparent'
                   }`}
                 >
                   <div className="space-y-0.5 truncate">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-cyan-300">
+                      <span className="font-mono text-xs font-bold text-[#eef0f6]">
                         {mod.name}
                       </span>
                       {mod.tier === 1 && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-800/40">
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-white/[0.05] text-slate-400 border border-white/[0.08]">
                           Tier 1
                         </span>
                       )}
@@ -159,21 +159,21 @@ export const StdlibPage: React.FC = () => {
         </div>
 
         {/* Right: Selected Module Details */}
-        <div className="lg:col-span-2 space-y-6 rounded-2xl bg-[#0D1117] border border-slate-800 p-6 shadow-xl">
+        <div className="lg:col-span-2 space-y-6 rounded-2xl bg-[#0f121a] border border-white/[0.08] p-6 shadow-xl">
           {/* Module Header */}
-          <div className="space-y-3 pb-6 border-b border-slate-800">
+          <div className="space-y-3 pb-6 border-b border-white/[0.08]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <h2 className="text-2xl font-bold font-mono text-cyan-400">
+                <h2 className="text-2xl font-bold font-mono text-[#eef0f6]">
                   {selectedModule.name}
                 </h2>
-                <span className="text-xs font-sans px-2.5 py-0.5 rounded-full bg-slate-850 text-slate-300 border border-slate-700">
+                <span className="text-xs font-sans px-2.5 py-0.5 rounded-full bg-white/[0.05] text-slate-300 border border-white/[0.08]">
                   {selectedModule.category}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/40 flex items-center gap-1">
+                <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/40 flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>Zero Libc</span>
                 </span>
@@ -184,7 +184,7 @@ export const StdlibPage: React.FC = () => {
               {selectedModule.description}
             </p>
 
-            <div className="p-3 bg-[#161B22] border border-slate-800 rounded-xl font-mono text-xs text-slate-300 flex items-center justify-between">
+            <div className="p-3 bg-[#161b26] border border-white/[0.08] rounded-xl font-mono text-xs text-slate-300 flex items-center justify-between">
               <span>use {selectedModule.name}</span>
               <button
                 onClick={() => handleCopy(`use ${selectedModule.name}`)}
@@ -203,13 +203,13 @@ export const StdlibPage: React.FC = () => {
           {/* Functions & APIs */}
           <div className="space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-sans flex items-center gap-2">
-              <Terminal className="w-4 h-4 text-cyan-400" />
+              <Terminal className="w-4 h-4 text-[#00d4f0]" />
               <span>Public Module Functions</span>
             </h3>
 
             <div className="space-y-4">
               {selectedModule.functions.map(fn => (
-                <div key={fn.name} className="p-4 rounded-xl bg-[#131720] border border-slate-800/80 space-y-2">
+                <div key={fn.name} className="p-4 rounded-xl bg-[#161b26] border border-white/[0.06] space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-xs font-bold text-emerald-400">
                       {fn.signature}
@@ -234,7 +234,7 @@ export const StdlibPage: React.FC = () => {
                   {fn.example && (
                     <div className="pt-2">
                       <div className="text-[11px] text-slate-500 font-sans mb-1">Example usage:</div>
-                      <pre className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-cyan-300 overflow-x-auto">
+                      <pre className="p-2.5 rounded-lg bg-[#090b10] border border-white/[0.08] text-xs font-mono text-cyan-300 overflow-x-auto">
                         {fn.example}
                       </pre>
                     </div>
@@ -246,19 +246,19 @@ export const StdlibPage: React.FC = () => {
 
           {/* Module Types if any */}
           {selectedModule.types && selectedModule.types.length > 0 && (
-            <div className="space-y-4 pt-4 border-t border-slate-800">
+            <div className="space-y-4 pt-4 border-t border-white/[0.08]">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-sans flex items-center gap-2">
-                <Code2 className="w-4 h-4 text-purple-400" />
+                <Code2 className="w-4 h-4 text-slate-400" />
                 <span>Exported Data Types</span>
               </h3>
 
               <div className="space-y-3">
                 {selectedModule.types.map(t => (
-                  <div key={t.name} className="p-3.5 rounded-xl bg-[#131720] border border-slate-800/80 space-y-1.5">
-                    <div className="font-mono text-xs font-bold text-purple-400">
+                  <div key={t.name} className="p-3.5 rounded-xl bg-[#161b26] border border-white/[0.06] space-y-1.5">
+                    <div className="font-mono text-xs font-bold text-slate-200">
                       {t.name}
                     </div>
-                    <pre className="p-2 rounded bg-slate-900 text-xs font-mono text-slate-300 overflow-x-auto">
+                    <pre className="p-2 rounded bg-[#090b10] border border-white/[0.08] text-xs font-mono text-slate-300 overflow-x-auto">
                       {t.definition}
                     </pre>
                     <p className="text-xs text-slate-400 font-sans">

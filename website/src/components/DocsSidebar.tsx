@@ -82,9 +82,9 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
   }).filter(cat => cat.pages.length > 0);
 
   return (
-    <aside className="w-full h-full flex flex-col bg-[#0B0F17] border-r border-slate-800 text-sm">
+    <aside className="w-full h-full flex flex-col bg-[#0f121a] border-r border-white/[0.08] text-sm">
       {/* Top Filter and Mobile Close */}
-      <div className="p-3.5 border-b border-slate-800 flex items-center gap-2">
+      <div className="p-3.5 border-b border-white/[0.08] flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
           <input
@@ -92,13 +92,13 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
             value={filterText}
             onChange={e => setFilterText(e.target.value)}
             placeholder="Filter documentation topics..."
-            className="w-full bg-[#161B22] border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+            className="w-full bg-[#161b26] border border-white/[0.08] rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
           />
         </div>
         {onCloseMobile && (
           <button
             onClick={onCloseMobile}
-            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
           >
             <X className="w-5 h-5" />
           </button>
@@ -114,7 +114,7 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
               {/* Category Header */}
               <button
                 onClick={() => toggleCategory(cat.id)}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800/40 transition-colors group"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 rounded-lg hover:bg-white/[0.03] transition-colors group"
               >
                 <div className="flex items-center gap-2">
                   {getCategoryIcon(cat.iconName)}
@@ -129,7 +129,7 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
 
               {/* Pages inside category */}
               {!isCollapsed && (
-                <div className="pl-3 space-y-0.5 border-l border-slate-800/80 ml-3 mt-1">
+                <div className="pl-3 space-y-0.5 border-l border-white/[0.08] ml-3 mt-1">
                   {cat.pages.map(page => {
                     const isActive = page.slug === currentPageSlug;
                     const isCompleted = completedSlugs.has(page.slug);
@@ -139,8 +139,8 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
                         key={page.slug}
                         className={`group flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-all text-xs ${
                           isActive
-                            ? 'bg-cyan-500/15 text-cyan-300 font-semibold border-l-2 border-cyan-400 pl-2'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'
+                            ? 'bg-white/[0.06] text-[#00d4f0] font-medium border-l-2 border-[#00d4f0] pl-2'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
                         }`}
                       >
                         <button

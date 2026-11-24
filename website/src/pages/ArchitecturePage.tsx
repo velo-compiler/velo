@@ -42,37 +42,37 @@ export const ArchitecturePage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <div className="p-4 rounded-xl bg-[#0D1117] border border-cyan-500/30 text-center space-y-2">
-            <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase">Stage 01</span>
-            <h4 className="text-sm font-bold text-white">Lexer Core</h4>
+          <div className="p-4 rounded-xl bg-[#0f121a] border border-white/[0.08] text-center space-y-2">
+            <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Stage 01</span>
+            <h4 className="text-sm font-bold text-[#eef0f6]">Lexer Core</h4>
             <p className="text-[11px] text-slate-400">Dynamic token sizing, brace-depth scanner, comment stripper.</p>
             <div className="text-[10px] font-mono text-slate-500">src/compiler/lexer.vl</div>
           </div>
 
-          <div className="p-4 rounded-xl bg-[#0D1117] border border-blue-500/30 text-center space-y-2">
-            <span className="text-[10px] font-mono text-blue-400 font-bold uppercase">Stage 02</span>
-            <h4 className="text-sm font-bold text-white">Parser & AST</h4>
+          <div className="p-4 rounded-xl bg-[#0f121a] border border-white/[0.08] text-center space-y-2">
+            <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Stage 02</span>
+            <h4 className="text-sm font-bold text-[#eef0f6]">Parser & AST</h4>
             <p className="text-[11px] text-slate-400">Recursive descent parser generating Abstract Syntax Tree nodes.</p>
             <div className="text-[10px] font-mono text-slate-500">src/compiler/parser.vl</div>
           </div>
 
-          <div className="p-4 rounded-xl bg-[#0D1117] border border-purple-500/30 text-center space-y-2">
-            <span className="text-[10px] font-mono text-purple-400 font-bold uppercase">Stage 03</span>
-            <h4 className="text-sm font-bold text-white">Monomorphizer</h4>
+          <div className="p-4 rounded-xl bg-[#0f121a] border border-white/[0.08] text-center space-y-2">
+            <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Stage 03</span>
+            <h4 className="text-sm font-bold text-[#eef0f6]">Monomorphizer</h4>
             <p className="text-[11px] text-slate-400">Zero-cost specialization of generic data structures and acts.</p>
             <div className="text-[10px] font-mono text-slate-500">src/analysis/mono.vl</div>
           </div>
 
-          <div className="p-4 rounded-xl bg-[#0D1117] border border-emerald-500/30 text-center space-y-2">
-            <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase">Stage 04</span>
-            <h4 className="text-sm font-bold text-white">C99 Emitter</h4>
+          <div className="p-4 rounded-xl bg-[#0f121a] border border-white/[0.08] text-center space-y-2">
+            <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Stage 04</span>
+            <h4 className="text-sm font-bold text-[#eef0f6]">C99 Emitter</h4>
             <p className="text-[11px] text-slate-400">Emits standard portable C99 with #line debugging directives.</p>
             <div className="text-[10px] font-mono text-slate-500">src/backend/codegen.vl</div>
           </div>
 
-          <div className="p-4 rounded-xl bg-[#0D1117] border border-amber-500/30 text-center space-y-2">
-            <span className="text-[10px] font-mono text-amber-400 font-bold uppercase">Stage 05</span>
-            <h4 className="text-sm font-bold text-white">Native Backend</h4>
+          <div className="p-4 rounded-xl bg-[#0f121a] border border-white/[0.08] text-center space-y-2">
+            <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Stage 05</span>
+            <h4 className="text-sm font-bold text-[#eef0f6]">Native Backend</h4>
             <p className="text-[11px] text-slate-400">GCC or MSVC (cl.exe) with -O3 optimizations producing .exe.</p>
             <div className="text-[10px] font-mono text-slate-500">src/backend/driver.vl</div>
           </div>
@@ -80,10 +80,10 @@ export const ArchitecturePage: React.FC = () => {
       </section>
 
       {/* 2. THREE-STAGE SELF-HOSTING DETERMINISM LOOP */}
-      <section className="p-8 rounded-3xl bg-[#0D1117] border border-slate-800 space-y-8">
+      <section className="p-8 rounded-3xl bg-[#0f121a] border border-white/[0.08] space-y-8">
         <div className="space-y-2">
-          <div className="flex items-center gap-2 text-cyan-400 text-xs font-bold uppercase font-mono">
-            <ShieldCheck className="w-4 h-4" />
+          <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase font-mono">
+            <ShieldCheck className="w-4 h-4 text-[#00d4f0]" />
             <span>Mathematical Correctness</span>
           </div>
           <h2 className="text-2xl font-bold text-white font-sans">
@@ -96,10 +96,10 @@ export const ArchitecturePage: React.FC = () => {
 
         {/* 3 Steps Visualization */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-5 rounded-2xl bg-[#161B22] border border-slate-800 space-y-3">
+          <div className="p-5 rounded-2xl bg-[#161b26] border border-white/[0.08] space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-mono text-cyan-400 font-bold">Step 1: Bootstrap</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">scripts/bootstrap.bat</span>
+              <span className="text-xs font-mono text-slate-300 font-bold">Step 1: Bootstrap</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-white/[0.05] text-slate-400">scripts/bootstrap.bat</span>
             </div>
             <h4 className="text-sm font-bold text-white">bootstrap.c → Gen 1</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
@@ -107,10 +107,10 @@ export const ArchitecturePage: React.FC = () => {
             </p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-[#161B22] border border-slate-800 space-y-3">
+          <div className="p-5 rounded-2xl bg-[#161b26] border border-white/[0.08] space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-mono text-cyan-400 font-bold">Step 2: Self-Compile</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">src/main.vl</span>
+              <span className="text-xs font-mono text-slate-300 font-bold">Step 2: Self-Compile</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-white/[0.05] text-slate-400">src/main.vl</span>
             </div>
             <h4 className="text-sm font-bold text-white">Gen 1 → Gen 2 → Gen 3</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
@@ -118,10 +118,10 @@ export const ArchitecturePage: React.FC = () => {
             </p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-[#161B22] border border-emerald-500/30 space-y-3">
+          <div className="p-5 rounded-2xl bg-[#161b26] border border-white/[0.08] space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono text-emerald-400 font-bold">Step 3: Verification</span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/40">Verified ✅</span>
+              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/40">Verified ✅</span>
             </div>
             <h4 className="text-sm font-bold text-white">SHA-256 Hash Match</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
@@ -208,27 +208,27 @@ export const ArchitecturePage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-5 rounded-2xl bg-[#0D1117] border border-slate-800 space-y-1">
-            <div className="text-2xl font-black font-mono text-cyan-400">9.8 / 10</div>
-            <h4 className="text-xs font-bold text-white uppercase">Compiler & Bootstrap</h4>
+          <div className="p-5 rounded-2xl bg-[#0f121a] border border-white/[0.08] space-y-1">
+            <div className="text-2xl font-bold font-mono text-[#eef0f6]">9.8 / 10</div>
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Compiler & Bootstrap</h4>
             <p className="text-[11px] text-slate-400">Bit-for-bit determinism, single bootstrap.c entry point.</p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-[#0D1117] border border-slate-800 space-y-1">
-            <div className="text-2xl font-black font-mono text-blue-400">9.6 / 10</div>
-            <h4 className="text-xs font-bold text-white uppercase">Runtime Performance</h4>
+          <div className="p-5 rounded-2xl bg-[#0f121a] border border-white/[0.08] space-y-1">
+            <div className="text-2xl font-bold font-mono text-[#eef0f6]">9.6 / 10</div>
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Runtime Performance</h4>
             <p className="text-[11px] text-slate-400">Zero-cost abstractions mapping directly to optimizing C backends.</p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-[#0D1117] border border-slate-800 space-y-1">
-            <div className="text-2xl font-black font-mono text-emerald-400">9.2 / 10</div>
-            <h4 className="text-xs font-bold text-white uppercase">Stdlib Purity</h4>
+          <div className="p-5 rounded-2xl bg-[#0f121a] border border-white/[0.08] space-y-1">
+            <div className="text-2xl font-bold font-mono text-[#eef0f6]">9.2 / 10</div>
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Stdlib Purity</h4>
             <p className="text-[11px] text-slate-400">127 pure-Velo modules with zero external C dependencies.</p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-[#0D1117] border border-slate-800 space-y-1">
-            <div className="text-2xl font-black font-mono text-purple-400">8.8 / 10</div>
-            <h4 className="text-xs font-bold text-white uppercase">Developer Experience</h4>
+          <div className="p-5 rounded-2xl bg-[#0f121a] border border-white/[0.08] space-y-1">
+            <div className="text-2xl font-bold font-mono text-[#eef0f6]">8.8 / 10</div>
+            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Developer Experience</h4>
             <p className="text-[11px] text-slate-400">Embedded native LSP server with sub-5ms hover tooltips.</p>
           </div>
         </div>

@@ -93,12 +93,9 @@ export const PlaygroundPage: React.FC = () => {
           {/* Editor Header Bar */}
           <div className="flex items-center justify-between px-4 py-3 bg-[#161B22] border-b border-slate-800 text-xs">
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 opacity-70">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-              </div>
-              <span className="font-mono text-slate-300 font-medium">main.vl</span>
+              <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] font-mono text-slate-300 text-[11px]">
+                main.vl
+              </span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -118,10 +115,10 @@ export const PlaygroundPage: React.FC = () => {
               </button>
               <button
                 onClick={handleRun}
-                className="px-4 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 shadow-md shadow-cyan-500/20 transition-all hover:scale-105"
+                className="px-3.5 py-1.5 bg-[#00d4f0] hover:bg-[#22ddf5] text-black font-semibold text-xs rounded-md flex items-center gap-1.5 transition-colors"
               >
-                <Play className="w-3.5 h-3.5 fill-white" />
-                <span>Run Program</span>
+                <Play className="w-3.5 h-3.5 fill-black" />
+                <span>Run</span>
               </button>
             </div>
           </div>
