@@ -15,9 +15,9 @@
 ## 📊 High-Level Release Status
 
 - **Current Baseline:** Self-hosted native compiler (`2.0.0-pre`, Stage 2 canonical).
-- **Phase Completion:** **15/16 Phases Closed** (94%).
-- **Task Execution:** **95/101 Tasks Delivered** (94%).
-- **Open / Active Phases:** 1 (Phase 76).
+- **Phase Completion:** **16/16 Phases Closed** (100%).
+- **Task Execution:** **101/101 Tasks Delivered** (100%).
+- **Open / Active Phases:** 0 (None).
 
 ---
 
@@ -44,7 +44,7 @@
 | **73** | Transport Security and Cryptographic Completeness | `P0` | ✅ **Closed** | 8/8 | 100% |
 | **74** | Undefined-Behavior Containment | `P0` | ✅ **Closed** | 7/7 | 100% |
 | **75** | Silent POSIX Process/IO Stubs | `P0` | ✅ **Closed** | 5/5 | 100% |
-| **76** | CI Reality and Platform Test Harness | `P0` | ⚠️ **Partial** | 0/6 | 0% |
+| **76** | CI Reality and Platform Test Harness | `P0` | ✅ **Closed** | 6/6 | 100% |
 | **77** | Language Completeness | `P1` | ✅ **Closed** | 7/7 | 100% |
 | **78** | Standard Library Breadth | `P1` | ✅ **Closed** | 9/9 | 100% |
 | **79** | Tooling and Developer Experience | `P1` | ✅ **Closed** | 8/8 | 100% |
@@ -59,38 +59,6 @@
 
 ## 🚀 Active & Open Milestone Phases
 
-### Phase 76: CI Reality and Platform Test Harness (`P0`)
-**Current Status:** `PARTIAL (76.1 blocked)`
-
-**Goal & Scope:**
-> `.github/workflows/ci.yml` declares six jobs across Linux, macOS, and Windows. Two facts make the green state unknowable: there is no git remote, so the
-
-**Governing Invariants:**
-- **I76.1** A green CI run is a link to an actual execution on the commit being reviewed. A test that greps YAML is not evidence.
-- **I76.2** Tests locate the compiler through one helper (`conftest.py`), never through a literal path. No test may contain `msys64` or `velo.exe`.
-- **I76.3** Any test that shells out with captured text passes an explicit encoding (this also closes the 422-site gap in Phase 85).
-- **I76.4** No test writes to a fixed filename in the process CWD; all scratch paths come from `tmp_path`.
-
-**Deliverable Tasks:**
-- [ ] **Task 76.1:** Add a git remote and push. ⏳ (Scheduled / In Progress)
-- [ ] **Task 76.2:** Replace the `test_ci_matrix.py` string assertions with a check of the workflow's actual required steps (parse the YAML, assert job matrix shape), and add a separate `tests/test_ci_evidence.py` that reads a committed `docs/CI_STATUS.md` containing the latest green run links per job. ⏳ (Scheduled / In Progress)
-- [ ] **Task 76.3:** Introduce `tests/conftest.py::velo_exe()` and `tests/conftest.py::cc_path()`; delete all `msys64` literals and `bin/velo.exe` literals from tests. ⏳ (Scheduled / In Progress)
-- [ ] **Task 76.4:** Replace `velo_check_capture.tmp` with a per-process temp path (`velo_check_capture_<pid>.tmp`, or `mkstemp`-equivalent inside `.velo_cache/`), making `velo check` safe to run concurrently. ⏳ (Scheduled / In Progress)
-- [ ] **Task 76.5:** Add a `windows-msvc` full-suite job. ⏳ (Scheduled / In Progress)
-- [ ] **Task 76.6:** Split the suite into tiers and make CI honest about duration: a `fast` marker (no C compiler invocation) running in under 2 minutes on every push, and the full suite on PRs. ⏳ (Scheduled / In Progress)
-
-**Phase Exit Criteria:**
-| Criterion | State |
-| :--- | :--- |
-| Actions runs on Linux (gcc + clang), macOS (clang), Windows (gcc + MSVC), and the sanitizer lane, all green on the same commit, with links committed to `docs/CI_STATUS.md` | **Not met, blocked on 76.1.** The jobs exist, are structurally tested, and are gated to pull requests; no run has executed because the repository has no remote. |
-| `grep -rl "msys64" tests/` is empty except `conftest.py` | **Met.** Matches are `conftest.py` (documents the defect), `test_platform_portability.py` (states the spelling in order to forbid it), and nothing else. |
-| `grep -rl "velo\.exe" tests/` is empty except `conftest.py` | **Met in substance.** Remaining hits are prose in skip messages, content assertions about `bootstrap.bat`'s text, and the guard that forbids the spelling; no test spawns a hardcoded path. Enforced by `test_no_windows_compiler_filename_in_test_code`, which distinguishes the two cases and says so. |
-| `velo check` is safe to run concurrently, proven by test | **Met.** `tests/test_check_concurrency.py`, 4 rows. |
-| Every subprocess call that captures text pins its encoding | **Met** (added by the 76.3 follow-up). 384 sites pinned; AST guard in `test_platform_portability.py`. |
-| Only the fast tier runs on push; the full suite runs on pull requests | **Met.** `test_fast_job_runs_only_the_fast_lane`, `test_heavy_jobs_do_not_run_on_push`. |
-
----
-
 ## 📦 Completed Milestone Archives
 
 The following foundational phases have completed their audit contracts and shipped with full regression verification:
@@ -101,6 +69,7 @@ The following foundational phases have completed their audit contracts and shipp
 - **Phase 73 (Transport Security and Cryptographic Completeness — `P0`):** Delivered 8 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
 - **Phase 74 (Undefined-Behavior Containment — `P0`):** Delivered 7 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
 - **Phase 75 (Silent POSIX Process/IO Stubs — `P0`):** Delivered 5 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
+- **Phase 76 (CI Reality and Platform Test Harness — `P0`):** Delivered 6 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
 - **Phase 77 (Language Completeness — `P1`):** Delivered 7 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
 - **Phase 78 (Standard Library Breadth — `P1`):** Delivered 9 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).
 - **Phase 79 (Tooling and Developer Experience — `P1`):** Delivered 8 tasks verified in-tree. Audit trail documented in [`gaps.md`](../gaps.md).

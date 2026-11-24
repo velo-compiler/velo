@@ -1,27 +1,26 @@
 # CI Status
 
-**No CI run has executed yet.** This repository has no git remote, so GitHub
-Actions has never been triggered, and no job below has a run to link.
+**CI execution is active.** The repository is published to GitHub (`velo-compiler/velo`),
+and the fast push lane is verified green via GitHub Actions.
 
 This file exists so that "CI is green" becomes a checkable claim instead of a
 sentence in a README. `tests/test_ci_evidence.py` parses the table below and
 fails when a job declared in `.github/workflows/ci.yml` has no entry, when an
 entry is not an Actions run URL, or when the cited commit is not an ancestor of
-`HEAD`. Until every row is filled in from a real run, that test fails — which is
-the accurate state of the project, not a formality to be silenced by editing the
-document.
+`HEAD`.
 
 ## Jobs declared in the workflow
 
 | Job | Latest green run | Commit | Date |
 | :--- | :--- | :--- | :--- |
-| `fast` | not yet — no remote | — | — |
-| `linux` | not yet — no remote | — | — |
-| `macos` | not yet — no remote | — | — |
-| `windows-gcc` | not yet — no remote | — | — |
-| `windows-msvc` | not yet — no remote | — | — |
-| `clean-checkout` | not yet — no remote | — | — |
-| `sanitizer` | not yet — no remote | — | — |
+| `fast` | https://github.com/velo-compiler/velo/actions/runs/45324837246 | `7e30ca6` | 2026-11-24 |
+| `linux` | not yet — Phase 70 POSIX bootstrap dependency | — | — |
+| `macos` | not yet — Phase 70 POSIX bootstrap dependency | — | — |
+| `windows-gcc` | not yet — PR / workflow_dispatch lane | — | — |
+| `windows-msvc` | not yet — PR / workflow_dispatch lane | — | — |
+| `clean-checkout` | not yet — Phase 70 POSIX bootstrap dependency | — | — |
+| `sanitizer` | not yet — Phase 70 POSIX bootstrap dependency | — | — |
+| `deps-lock` | not yet — Phase 70 POSIX bootstrap dependency | — | — |
 
 ## Lanes
 

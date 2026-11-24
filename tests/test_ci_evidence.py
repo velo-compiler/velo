@@ -100,10 +100,8 @@ def test_ci_status_file_exists():
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "Task 76.1 is blocked: the repository has no git remote, so Actions has "
-        "never run and no job can cite a green run. This is expected to fail "
-        "until a remote exists and the workflow executes; strict=True means the "
-        "marker must be removed once it starts passing."
+        "Task 76.1 unblocked and fast push lane verified; heavy PR jobs and "
+        "POSIX matrix lanes pending Phase 70 POSIX bootstrap."
     ),
 )
 def test_every_declared_job_has_evidence():
