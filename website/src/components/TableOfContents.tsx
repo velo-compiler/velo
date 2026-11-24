@@ -60,14 +60,14 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({
   return (
     <div className="w-full text-xs space-y-6">
       {/* Reading Progress Indicator */}
-      <div className="space-y-1.5 pb-4 border-b border-slate-800">
+      <div className="space-y-1.5 pb-4 border-b border-white/[0.08]">
         <div className="flex items-center justify-between text-slate-400 font-medium">
-          <span>Article Progress</span>
-          <span className="text-cyan-400 font-mono">{scrollProgress}%</span>
+          <span>Reading progress</span>
+          <span className="text-slate-300 font-mono">{scrollProgress}%</span>
         </div>
-        <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <div className="w-full h-1 bg-white/[0.06] rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-150"
+            className="h-full bg-[#00d4f0] transition-all duration-150"
             style={{ width: `${scrollProgress}%` }}
           />
         </div>
@@ -75,15 +75,15 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({
 
       {/* Headings List */}
       <div className="space-y-2">
-        <div className="flex items-center gap-2 font-semibold text-slate-300 uppercase tracking-wider text-[11px]">
-          <AlignLeft className="w-3.5 h-3.5 text-cyan-400" />
+        <div className="flex items-center gap-2 font-medium text-slate-400 uppercase tracking-wider text-[11px]">
+          <AlignLeft className="w-3.5 h-3.5 text-slate-400" />
           <span>On this page</span>
         </div>
 
         {headings.length === 0 ? (
           <p className="text-slate-500 italic">No sub-sections</p>
         ) : (
-          <nav className="space-y-1 pl-2 border-l border-slate-800">
+          <nav className="space-y-1 pl-2 border-l border-white/[0.08]">
             {headings.map(h => {
               const isActive = activeId === h.id;
               return (
@@ -92,7 +92,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({
                   onClick={() => scrollToHeading(h.id)}
                   className={`block text-left py-1 text-[12.5px] transition-colors leading-snug w-full truncate ${
                     isActive
-                      ? 'text-cyan-400 font-medium -ml-[9px] border-l-2 border-cyan-400 pl-2'
+                      ? 'text-[#eef0f6] font-medium -ml-[9px] border-l-2 border-[#00d4f0] pl-2'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                   style={{ paddingLeft: h.level > 2 ? '12px' : '0px' }}
@@ -106,39 +106,39 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({
       </div>
 
       {/* Quick Actions */}
-      <div className="pt-4 border-t border-slate-800 space-y-2">
+      <div className="pt-4 border-t border-white/[0.08] space-y-2">
         <button
           onClick={onToggleComplete}
           className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
             isCompleted
-              ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-500/30'
-              : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/50'
+              ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-800/40'
+              : 'bg-[#161b26] hover:bg-white/[0.05] text-slate-300 border border-white/[0.08]'
           }`}
         >
           <CheckCircle2 className={`w-3.5 h-3.5 ${isCompleted ? 'text-emerald-400' : 'text-slate-400'}`} />
-          {isCompleted ? 'Completed ✓' : 'Mark as Read'}
+          <span>{isCompleted ? 'Completed' : 'Mark as read'}</span>
         </button>
 
         <button
           onClick={copyPageLink}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-[#161b26] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200 border border-white/[0.08] transition-colors"
         >
           {copiedLink ? (
             <>
               <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Link Copied!</span>
+              <span>Link copied</span>
             </>
           ) : (
             <>
               <LinkIcon className="w-3.5 h-3.5 text-slate-400" />
-              <span>Copy Article Link</span>
+              <span>Copy article link</span>
             </>
           )}
         </button>
 
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-slate-400 hover:text-cyan-400 transition-colors text-xs"
+          className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-slate-400 hover:text-slate-200 transition-colors text-xs"
         >
           <ArrowUp className="w-3.5 h-3.5" />
           <span>Back to top</span>

@@ -5,7 +5,6 @@ import {
   CheckCircle2, 
   Circle, 
   Search,
-  Sparkles,
   PlayCircle,
   BookOpen,
   GitBranch,
@@ -13,7 +12,6 @@ import {
   Layers,
   Shield,
   Database,
-  Zap,
   Package,
   Archive,
   Wrench,
@@ -53,9 +51,9 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
   };
 
   const getCategoryIcon = (iconName: string) => {
-    const props = { className: "w-4 h-4 text-cyan-400 shrink-0" };
+    const props = { className: "w-4 h-4 text-slate-400 group-hover:text-slate-300 transition-colors shrink-0" };
     switch (iconName) {
-      case 'Sparkles': return <Sparkles {...props} />;
+      case 'Sparkles': return <Compass {...props} />;
       case 'PlayCircle': return <PlayCircle {...props} />;
       case 'BookOpen': return <BookOpen {...props} />;
       case 'GitBranch': return <GitBranch {...props} />;
@@ -63,7 +61,7 @@ export const DocsSidebar: React.FC<DocsSidebarProps> = ({
       case 'Layers': return <Layers {...props} />;
       case 'Shield': return <Shield {...props} />;
       case 'Database': return <Database {...props} />;
-      case 'Zap': return <Zap {...props} />;
+      case 'Zap': return <Cpu {...props} />;
       case 'Package': return <Package {...props} />;
       case 'Archive': return <Archive {...props} />;
       case 'Wrench': return <Wrench {...props} />;

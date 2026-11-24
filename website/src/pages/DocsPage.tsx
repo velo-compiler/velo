@@ -6,7 +6,6 @@ import {
   ArrowLeft, 
   ArrowRight, 
   BookOpen,
-  Sparkles,
   Share2,
   Terminal
 } from 'lucide-react';
@@ -48,7 +47,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex gap-8 items-start relative">
         {/* ================= 1. LEFT SIDEBAR (DESKTOP) ================= */}
-        <div className="hidden md:block w-64 lg:w-72 shrink-0 sticky top-20 max-h-[calc(100vh-6rem)] rounded-2xl overflow-hidden border border-slate-800 shadow-lg">
+        <div className="hidden md:block w-64 lg:w-72 shrink-0 sticky top-20 max-h-[calc(100vh-6rem)] rounded-2xl overflow-hidden border border-white/[0.08]">
           <DocsSidebar
             categories={categories}
             currentPageSlug={currentPage.slug}
@@ -65,7 +64,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({
               className="fixed inset-0 bg-black/75 backdrop-blur-sm"
               onClick={onCloseMobileSidebar}
             />
-            <div className="relative w-80 max-w-[85vw] h-full bg-[#0B0F17] shadow-2xl z-10">
+            <div className="relative w-80 max-w-[85vw] h-full bg-[#0f121a] shadow-2xl z-10">
               <DocsSidebar
                 categories={categories}
                 currentPageSlug={currentPage.slug}
@@ -81,33 +80,33 @@ export const DocsPage: React.FC<DocsPageProps> = ({
         {/* ================= 2. MAIN CONTENT ARTICLE ================= */}
         <main className="flex-1 min-w-0 max-w-3xl py-2 space-y-10">
           {/* Breadcrumbs */}
-          <nav className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-            <span className="hover:text-slate-200 cursor-pointer">Docs</span>
+          <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+            <span className="hover:text-slate-300 cursor-pointer">Docs</span>
             <ChevronRight className="w-3 h-3 text-slate-600" />
             <span className="text-slate-400 truncate">{currentPage.category}</span>
             <ChevronRight className="w-3 h-3 text-slate-600" />
-            <span className="text-cyan-400 font-semibold truncate">{currentPage.title}</span>
+            <span className="text-slate-200 font-medium truncate">{currentPage.title}</span>
           </nav>
 
           {/* Article Header */}
-          <div className="space-y-4 border-b border-slate-800 pb-8">
+          <div className="space-y-4 border-b border-white/[0.08] pb-8">
             <div className="flex flex-wrap items-center gap-2.5">
               {currentPage.badge && (
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-cyan-950 text-cyan-400 border border-cyan-800/40">
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-white/[0.05] text-slate-400 border border-white/[0.08]">
                   {currentPage.badge}
                 </span>
               )}
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Clock className="w-3.5 h-3.5" />
                 <span>{currentPage.readTimeMinutes} min read</span>
               </div>
             </div>
 
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight font-sans">
+            <h1 className="text-3xl sm:text-4xl font-bold text-[#eef0f6] tracking-tight font-sans">
               {currentPage.title}
             </h1>
 
-            <p className="text-base sm:text-lg text-slate-300 leading-relaxed font-normal">
+            <p className="text-base text-slate-400 leading-relaxed font-normal">
               {currentPage.description}
             </p>
 
@@ -115,29 +114,29 @@ export const DocsPage: React.FC<DocsPageProps> = ({
             <div className="pt-2">
               <button
                 onClick={() => onToggleComplete(currentPage.slug)}
-                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   isCompleted
-                    ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                    : 'bg-slate-850 hover:bg-slate-800 text-slate-300 border border-slate-700/60'
+                    ? 'bg-emerald-950/40 text-emerald-300 border border-emerald-800/40'
+                    : 'bg-[#161b26] hover:bg-white/[0.05] text-slate-300 border border-white/[0.08]'
                 }`}
               >
                 <CheckCircle2 className={`w-4 h-4 ${isCompleted ? 'text-emerald-400' : 'text-slate-400'}`} />
-                <span>{isCompleted ? 'Lesson Completed' : 'Mark as Completed'}</span>
+                <span>{isCompleted ? 'Completed' : 'Mark as complete'}</span>
               </button>
             </div>
           </div>
 
           {/* "What You'll Learn" Box */}
           {currentPage.whatYoullLearn && currentPage.whatYoullLearn.length > 0 && (
-            <div className="p-5 rounded-2xl bg-[#0E131F] border border-cyan-500/20 space-y-2.5">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-400 font-sans">
-                <Sparkles className="w-4 h-4" />
-                <span>What you&apos;ll learn in this guide</span>
+            <div className="p-5 rounded-xl bg-[#0f121a] border border-white/[0.08] space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400 font-sans">
+                <CheckCircle2 className="w-3.5 h-3.5 text-slate-400" />
+                <span>Objectives</span>
               </div>
               <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300 font-sans">
                 {currentPage.whatYoullLearn.map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2">
-                    <span className="text-cyan-400 font-bold shrink-0 mt-0.5">✓</span>
+                    <span className="text-slate-500 font-mono text-xs shrink-0 mt-0.5">→</span>
                     <span>{item}</span>
                   </li>
                 ))}
@@ -149,7 +148,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({
           <div className="space-y-12">
             {currentPage.sections.map((section) => (
               <section key={section.id} id={section.id} className="space-y-4 scroll-mt-24">
-                <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight font-sans border-b border-slate-800/60 pb-2">
+                <h2 className="text-xl sm:text-2xl font-bold text-[#eef0f6] tracking-tight font-sans border-b border-white/[0.08] pb-2">
                   {section.title}
                 </h2>
 
@@ -165,7 +164,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({
                             <li key={iIdx} dangerouslySetInnerHTML={{
                               __html: it
                                 .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')
-                                .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono text-xs border border-slate-700/50">$1</code>')
+                                .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-white/[0.06] text-slate-200 font-mono text-xs border border-white/[0.08]">$1</code>')
                             }} />
                           ))}
                         </ul>
@@ -175,7 +174,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({
                     if (para.startsWith('```')) {
                       const codeContent = para.replace(/```[a-z]*\n?/g, '').trim();
                       return (
-                        <pre key={pIdx} className="p-4 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono text-cyan-300 overflow-x-auto">
+                        <pre key={pIdx} className="p-4 rounded-xl bg-[#090b10] border border-white/[0.08] text-xs font-mono text-slate-300 overflow-x-auto">
                           {codeContent}
                         </pre>
                       );
@@ -187,7 +186,7 @@ export const DocsPage: React.FC<DocsPageProps> = ({
                         dangerouslySetInnerHTML={{
                           __html: para
                             .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
-                            .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300 font-mono text-xs border border-slate-700/50">$1</code>')
+                            .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-white/[0.06] text-slate-200 font-mono text-xs border border-white/[0.08]">$1</code>')
                         }}
                       />
                     );
@@ -196,10 +195,10 @@ export const DocsPage: React.FC<DocsPageProps> = ({
 
                 {/* Table if present */}
                 {section.table && (
-                  <div className="overflow-x-auto my-6 rounded-xl border border-slate-800 bg-[#0E121A] shadow-md">
+                  <div className="overflow-x-auto my-6 rounded-xl border border-white/[0.08] bg-[#0f121a]">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-800 bg-[#161B24] text-slate-200">
+                        <tr className="border-b border-white/[0.08] bg-[#161b26] text-slate-200">
                           {section.table.headers.map((h, hIdx) => (
                             <th key={hIdx} className="p-3 font-semibold font-sans">
                               {h}
@@ -207,9 +206,9 @@ export const DocsPage: React.FC<DocsPageProps> = ({
                           ))}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800/60 text-slate-300 font-sans">
+                      <tbody className="divide-y divide-white/[0.05] text-slate-300 font-sans">
                         {section.table.rows.map((row, rIdx) => (
-                          <tr key={rIdx} className="hover:bg-slate-800/30 transition-colors">
+                          <tr key={rIdx} className="hover:bg-white/[0.02] transition-colors">
                             {row.map((cell, cIdx) => (
                               <td key={cIdx} className="p-3 font-mono text-[12.5px]">
                                 {cell}
@@ -246,17 +245,17 @@ export const DocsPage: React.FC<DocsPageProps> = ({
           </div>
 
           {/* Previous / Next Article Navigation Cards */}
-          <div className="pt-8 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="pt-8 border-t border-white/[0.08] grid grid-cols-1 sm:grid-cols-2 gap-4">
             {currentPage.prevPage ? (
               <button
                 onClick={() => onSelectPage(currentPage.prevPage!.slug)}
-                className="p-4 rounded-xl bg-[#0D1117] hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/30 text-left transition-all group"
+                className="p-4 rounded-xl bg-[#0f121a] hover:bg-[#161b26] border border-white/[0.08] hover:border-white/[0.16] text-left transition-colors group"
               >
-                <div className="flex items-center gap-1.5 text-xs text-slate-500 group-hover:text-cyan-400 font-medium">
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 group-hover:text-slate-400 font-medium">
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Previous</span>
                 </div>
-                <div className="text-sm font-bold text-white mt-1 group-hover:text-cyan-300 transition-colors">
+                <div className="text-sm font-semibold text-white mt-1 group-hover:text-[#00d4f0] transition-colors">
                   {currentPage.prevPage.title}
                 </div>
               </button>
@@ -265,13 +264,13 @@ export const DocsPage: React.FC<DocsPageProps> = ({
             {currentPage.nextPage ? (
               <button
                 onClick={() => onSelectPage(currentPage.nextPage!.slug)}
-                className="p-4 rounded-xl bg-[#0D1117] hover:bg-slate-850 border border-slate-800 hover:border-cyan-500/30 text-right transition-all group"
+                className="p-4 rounded-xl bg-[#0f121a] hover:bg-[#161b26] border border-white/[0.08] hover:border-white/[0.16] text-right transition-colors group"
               >
-                <div className="flex items-center justify-end gap-1.5 text-xs text-slate-500 group-hover:text-cyan-400 font-medium">
+                <div className="flex items-center justify-end gap-1.5 text-xs text-slate-500 group-hover:text-slate-400 font-medium">
                   <span>Next</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </div>
-                <div className="text-sm font-bold text-white mt-1 group-hover:text-cyan-300 transition-colors">
+                <div className="text-sm font-semibold text-white mt-1 group-hover:text-[#00d4f0] transition-colors">
                   {currentPage.nextPage.title}
                 </div>
               </button>
