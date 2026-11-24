@@ -54,7 +54,55 @@ try {
 }
 
 if (-not $downloadSuccess) {
-    # Fallback to local copy if running from repo root or parent directories
+    # Fallback A: GitHub Releases latest binary
+    $githubReleaseExe = "https://github.com/velo-compiler/velo/releases/latest/download/velo.exe"
+    try {
+        Write-Host "--> Trying GitHub release binary from $githubReleaseExe..." -ForegroundColor Yellow
+        $wc = New-Object System.Net.WebClient
+        $wc.DownloadFile($githubReleaseExe, $targetExe)
+        if ((Test-Path $targetExe) -and ((Get-Item $targetExe).Length -gt 0)) {
+            $downloadSuccess = $true
+        }
+    } catch {}
+}
+
+if (-not $downloadSuccess) {
+    # Fallback B: Compile from bootstrap.c if GCC or Clang is installed locally
+    $gccCmd = Get-Command gcc -ErrorAction SilentlyContinue
+    $clangCmd = Get-Command clang -ErrorAction SilentlyContinue
+    if ($gccCmd -or $clangCmd) {
+        $cCompiler = if ($gccCmd) { "gcc" } else { "clang" }
+        Write-Host "--> Compiling standalone compiler from bootstrap.c using $cCompiler..." -ForegroundColor Yellow
+        $bootstrapUrls = @(
+            "$serverUrl/bootstrap.c",
+            "https://raw.githubusercontent.com/velo-compiler/velo/main/bootstrap.c"
+        )
+        $bootstrapFile = Join-Path $veloHome "bootstrap.c"
+        $downloadedBootstrap = $false
+        foreach ($bUrl in $bootstrapUrls) {
+            try {
+                $wc = New-Object System.Net.WebClient
+                $wc.DownloadFile($bUrl, $bootstrapFile)
+                if ((Test-Path $bootstrapFile) -and ((Get-Item $bootstrapFile).Length -gt 1000)) {
+                    $downloadedBootstrap = $true
+                    break
+                }
+            } catch {}
+        }
+        if ($downloadedBootstrap) {
+            try {
+                & $cCompiler -std=c99 -O2 $bootstrapFile -o $targetExe
+                if ((Test-Path $targetExe) -and ((Get-Item $targetExe).Length -gt 0)) {
+                    $downloadSuccess = $true
+                    Write-Host "--> Successfully compiled standalone binary: $targetExe" -ForegroundColor Green
+                }
+            } catch {}
+        }
+    }
+}
+
+if (-not $downloadSuccess) {
+    # Fallback C: Local repo binary candidates if cloned locally
     $localCandidates = @(
         (Join-Path $PSScriptRoot "..\..\bin\velo.exe"),
         (Join-Path $PSScriptRoot "velo.exe"),
@@ -69,11 +117,12 @@ if (-not $downloadSuccess) {
             Write-Host "--> Falling back to local repo binary: $cand" -ForegroundColor Yellow
             Copy-Item -Force $cand $targetExe
             $found = $true
+            $downloadSuccess = $true
             break
         }
     }
     if (-not $found) {
-        Write-Error "Failed to install velo.exe from $($downloadExeUrl) and no local binary found."
+        Write-Error "Failed to install velo.exe from $($downloadExeUrl) and no local compiler or binary found."
         exit 1
     }
 }
@@ -98,7 +147,25 @@ try {
         $installedStd = $true
     }
 } catch {
-    # Fallback to local repo directories
+    # Fallback A: GitHub releases or raw repo archive
+    $fallbackStdUrls = @(
+        "https://github.com/velo-compiler/velo/releases/latest/download/velo-std.zip",
+        "https://github.com/velo-compiler/velo/archive/refs/heads/main.zip"
+    )
+    foreach ($fUrl in $fallbackStdUrls) {
+        try {
+            $wc = New-Object System.Net.WebClient
+            $wc.DownloadFile($fUrl, $tempZip)
+            if (Test-Path $tempZip) {
+                Expand-Archive -Path $tempZip -DestinationPath $veloHome -Force
+                Remove-Item -Force $tempZip -ErrorAction SilentlyContinue
+                $installedStd = $true
+                break
+            }
+        } catch {}
+    }
+
+    # Fallback B: Local repo directories
     $localStdCandidates = @(
         (Join-Path $PSScriptRoot "..\..\std"),
         ".\std",
