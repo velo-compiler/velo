@@ -88,6 +88,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <signal.h>
 #include <poll.h>
@@ -123,6 +124,87 @@ static inline int32_t VirtualFree(uint8_t* lpAddress, size_t dwSize, uint32_t dw
         return munmap((void*)lpAddress, dwSize) == 0 ? 1 : 0;
     }
     return 1;
+}
+
+// POSIX fallback definitions for Windows console/file handle APIs used by std/io/handle_windows.vl.
+// Allows a single Windows-generated bootstrap.c to compile, link, and execute natively on Linux & macOS.
+// Handles encode POSIX fd + 1 so fd 0 (stdin or first opened fd) stays non-zero and passes io_is_valid_handle().
+static inline uint8_t* GetStdHandle(uint32_t nStdHandle) {
+    if (nStdHandle == (uint32_t)-10) return (uint8_t*)(uintptr_t)(STDIN_FILENO + 1);
+    if (nStdHandle == (uint32_t)-11) return (uint8_t*)(uintptr_t)(STDOUT_FILENO + 1);
+    if (nStdHandle == (uint32_t)-12) return (uint8_t*)(uintptr_t)(STDERR_FILENO + 1);
+    return (uint8_t*)(uintptr_t)-1;
+}
+
+static inline int32_t WriteFile(uint8_t* hFile, uint8_t* lpBuffer, uint32_t nBytesToWrite, uint32_t* lpBytesWritten, uint8_t* lpOverlapped) {
+    (void)lpOverlapped;
+    int fd = (int)((uintptr_t)hFile) - 1;
+    if (fd < 0) {
+        if (lpBytesWritten) *lpBytesWritten = 0;
+        return 0;
+    }
+    ssize_t n = write(fd, lpBuffer, (size_t)nBytesToWrite);
+    if (n < 0) {
+        if (lpBytesWritten) *lpBytesWritten = 0;
+        return 0;
+    }
+    if (lpBytesWritten) *lpBytesWritten = (uint32_t)n;
+    return 1;
+}
+
+static inline int32_t ReadFile(uint8_t* hFile, uint8_t* lpBuffer, uint32_t nBytesToRead, uint32_t* lpBytesRead, uint8_t* lpOverlapped) {
+    (void)lpOverlapped;
+    int fd = (int)((uintptr_t)hFile) - 1;
+    if (fd < 0) {
+        if (lpBytesRead) *lpBytesRead = 0;
+        return 0;
+    }
+    ssize_t n = read(fd, lpBuffer, (size_t)nBytesToRead);
+    if (n < 0) {
+        if (lpBytesRead) *lpBytesRead = 0;
+        return 0;
+    }
+    if (lpBytesRead) *lpBytesRead = (uint32_t)n;
+    return 1;
+}
+
+static inline int32_t SetFilePointerEx(uint8_t* hFile, int64_t liDistanceToMove, int64_t* lpNewFilePointer, uint32_t dwMoveMethod) {
+    int fd = (int)((uintptr_t)hFile) - 1;
+    if (fd < 0) return 0;
+    int whence = (dwMoveMethod == 1u) ? SEEK_CUR : ((dwMoveMethod == 2u) ? SEEK_END : SEEK_SET);
+    off_t pos = lseek(fd, (off_t)liDistanceToMove, whence);
+    if (pos == (off_t)-1) return 0;
+    if (lpNewFilePointer) *lpNewFilePointer = (int64_t)pos;
+    return 1;
+}
+
+static inline int32_t GetFileSizeEx(uint8_t* hFile, int64_t* lpFileSize) {
+    int fd = (int)((uintptr_t)hFile) - 1;
+    if (fd < 0) return 0;
+    struct stat st;
+    if (fstat(fd, &st) != 0) return 0;
+    if (lpFileSize) *lpFileSize = (int64_t)st.st_size;
+    return 1;
+}
+
+static inline int32_t CloseHandle(void* hObject) {
+    int fd = (int)((uintptr_t)hObject) - 1;
+    if (fd < 0) return 0;
+    return close(fd) == 0 ? 1 : 0;
+}
+
+static inline uint8_t* CreateFileA(uint8_t* lpFileName, uint32_t dwDesiredAccess, uint32_t dwShareMode, uint8_t* lpSecurityAttributes, uint32_t dwCreationDisposition, uint32_t dwFlagsAndAttributes, uint8_t* hTemplateFile) {
+    (void)dwShareMode; (void)lpSecurityAttributes; (void)dwFlagsAndAttributes; (void)hTemplateFile;
+    if (!lpFileName) return (uint8_t*)(uintptr_t)-1;
+    int wants_read = (dwDesiredAccess & 0x80000000u) != 0;
+    int wants_write = (dwDesiredAccess & 0x40000000u) != 0;
+    int oflags = (wants_read && wants_write) ? O_RDWR : (wants_write ? O_WRONLY : O_RDONLY);
+    if (dwCreationDisposition == 2u) oflags |= (O_CREAT | O_TRUNC);
+    else if (dwCreationDisposition == 4u) oflags |= O_CREAT;
+    else if (dwCreationDisposition == 5u) oflags |= O_TRUNC;
+    int fd = open((const char*)lpFileName, oflags, 0644);
+    if (fd < 0) return (uint8_t*)(uintptr_t)-1;
+    return (uint8_t*)(uintptr_t)(fd + 1);
 }
 
 // Phase 75 / Task 75.1: POSIX execvp adapter for Velo.

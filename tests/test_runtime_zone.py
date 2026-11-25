@@ -40,6 +40,9 @@ RUNTIME_DIR = REPO_ROOT / "runtime"
 # fail. Allocations are counted per call, so a harness arms immediately before
 # the call it wants to fail and the index is 0.
 PRELUDE = r"""
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200112L
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>

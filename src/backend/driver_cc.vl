@@ -200,11 +200,14 @@ act append_runtime_includes(sb: @StringBuilder, is_msvc: bool) {
 // Assembles MSVC cl.exe compilation command.
 act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
     mut cmd_sb = create_sb(512)
-    let vcvars = find_vcvars()
-    if vcvars != null {
-        sb_append_str(@cmd_sb, "call ")
-        sb_append_str(@cmd_sb, quote_path(vcvars))
-        sb_append_str(@cmd_sb, " >nul && ")
+    let vscmd_ver = os.get_env("VSCMD_VER")
+    if vscmd_ver == null or str.len(vscmd_ver) == 0 {
+        let vcvars = find_vcvars()
+        if vcvars != null {
+            sb_append_str(@cmd_sb, "call ")
+            sb_append_str(@cmd_sb, quote_path(vcvars))
+            sb_append_str(@cmd_sb, " >nul && ")
+        }
     }
     sb_append_str(@cmd_sb, "cl /nologo /TC /W3 /wd4090 /wd4996 /D_CRT_SECURE_NO_WARNINGS ")
     append_runtime_includes(@cmd_sb, true)
@@ -312,6 +315,8 @@ act assemble_runner_cmd(cc: string, exe_path: string, extra_args: string) -> str
     mut run_sb = create_sb(256)
     if cc != "cl" and fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@run_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
+    } else if fs_exists("C:/Windows") or fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
+        sb_append_str(@run_sb, "call ")
     }
     sb_append_str(@run_sb, quote_path(path_to_native_str(exe_path)))
     if extra_args != null and str.len(extra_args) > 0 {

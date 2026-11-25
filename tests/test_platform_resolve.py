@@ -40,25 +40,25 @@ act main() -> i32 {
 """
 
 NEUTRAL = """
-act bar_name() -> string {
+view act bar_name() -> string {
     return "variant-neutral"
 }
 """
 
 WINDOWS = """
-act bar_name() -> string {
+view act bar_name() -> string {
     return "variant-windows"
 }
 """
 
 LINUX = """
-act bar_name() -> string {
+view act bar_name() -> string {
     return "variant-linux"
 }
 """
 
 MACOS = """
-act bar_name() -> string {
+view act bar_name() -> string {
     return "variant-macos"
 }
 """

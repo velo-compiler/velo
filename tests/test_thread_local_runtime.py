@@ -19,6 +19,9 @@ RUNTIME = ROOT / "velo" / "runtime"
 # velo_runtime.h — the harness brings its own threading.
 
 HARNESS = r"""
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200112L
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -99,6 +102,9 @@ int main(void) {
 # increments land at exactly 4000; repeated spawn/join cycles stay stable
 # (each thread releases its per-thread arena set on exit).
 HARNESS_THREADS = r"""
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200112L
+#endif
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>

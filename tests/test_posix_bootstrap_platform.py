@@ -33,6 +33,8 @@ WIN32_PORTABILITY_SYMBOLS = {
     "DeleteFileA", "MoveFileExA", "CopyFileA", "FindFirstFileA", "FindNextFileA",
     "FindClose", "CreateProcessA", "GetEnvironmentVariableA", "SetEnvironmentVariableA",
     "ExitProcess", "GetCurrentProcessId", "VirtualAlloc", "VirtualFree",
+    "GetStdHandle", "WriteFile", "ReadFile", "SetFilePointerEx",
+    "GetFileSizeEx", "CloseHandle", "CreateFileA",
     "SystemFunction036", "WSAStartup", "WSACleanup", "closesocket", "ioctlsocket"
 }
 
@@ -152,8 +154,12 @@ def test_windows_host_bootstrap_c_object_cleanliness(tmp_path):
     assert obj_out.exists(), f"Object file {obj_out} was not produced"
 
     undefined_syms = _get_nm_undefined_symbols(obj_out)
-    # On Windows, VirtualAlloc / VirtualFree are the native allocator; all other 20 must be completely gone
-    unwanted_win32 = WIN32_PORTABILITY_SYMBOLS - {"VirtualAlloc", "VirtualFree"}
+    # On Windows, VirtualAlloc/VirtualFree and std/io Win32 handle APIs are native (guarded with POSIX fallbacks in velo_runtime.h)
+    unwanted_win32 = WIN32_PORTABILITY_SYMBOLS - {
+        "VirtualAlloc", "VirtualFree",
+        "GetStdHandle", "WriteFile", "ReadFile", "SetFilePointerEx",
+        "GetFileSizeEx", "CloseHandle", "CreateFileA",
+    }
     found_unwanted = undefined_syms & unwanted_win32
     assert len(found_unwanted) == 0, (
         f"Unexpected Win32 symbols found in bootstrap.o on Windows:\n{sorted(found_unwanted)}"
@@ -170,6 +176,8 @@ def test_windows_host_bootstrap_c_object_cleanliness(tmp_path):
     header_text = (REPO_ROOT / "runtime" / "velo_runtime.h").read_text(encoding="utf-8")
     assert "static inline uint8_t* VirtualAlloc" in header_text, "Missing non-Windows VirtualAlloc fallback"
     assert "static inline int32_t VirtualFree" in header_text, "Missing non-Windows VirtualFree fallback"
+    for sym in ("GetStdHandle", "WriteFile", "ReadFile", "SetFilePointerEx", "GetFileSizeEx", "CloseHandle", "CreateFileA"):
+        assert f"{sym}(" in header_text, f"Missing non-Windows {sym} fallback"
     assert "#include <sys/mman.h>" in header_text, "Missing sys/mman.h include in velo_runtime.h"
 
 
